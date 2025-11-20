@@ -1580,75 +1580,77 @@ with tab_stats:
                         st.info("Tryb porównania dostępny tylko przy wybranym 'Oba'")
             
             # --------------------
-            # 3. Export to Excel - UPDATED
-            # --------------------
-            st.subheader("📥 Eksport raportu")
+    # 4. Export to Excel - FIXED VERSION
+    # --------------------
+    st.subheader("📥 Eksport raportu")
+    
+    def create_excel_report():
+        """Create a comprehensive Excel report with formatting"""
+        output = BytesIO()
+        
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Sheet 1: Summary
+            if stat_operation == "Oba":
+                summary_data = {
+                    'Wskaźnik': ['Łączna liczba palet', 'Przyjęte palety', 'Usunięte palety', 
+                                'Łączna liczba sztuk', 'Przyjęte sztuki', 'Usunięte sztuki',
+                                'Unikalne artykuły', 'Średnio sztuk na palecie'],
+                    'Wartość': [total_pallets, len(received_df), len(deleted_df_stats),
+                               int(total_qty), int(received_qty), int(deleted_qty),
+                               unique_articles, f"{avg_per_pallet:.1f}"],
+                }
+            else:
+                summary_data = {
+                    'Wskaźnik': [f'Liczba {operation_name} palet', f'Liczba {operation_name} sztuk', 
+                                'Unikalne artykuły', 'Średnio sztuk na palecie'],
+                    'Wartość': [total_pallets, int(total_qty), unique_articles, f"{avg_per_pallet:.1f}"],
+                }
             
-            def create_excel_report():
-                """Create a comprehensive Excel report with formatting"""
-                output = BytesIO()
-                
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    # Sheet 1: Summary
-                    if stat_operation == "Oba":
-                        summary_data = {
-                            'Wskaźnik': ['Łączna liczba palet', 'Przyjęte palety', 'Usunięte palety', 
-                                        'Łączna liczba sztuk', 'Przyjęte sztuki', 'Usunięte sztuki',
-                                        'Unikalne artykuły', 'Średnio sztuk na palecie'],
-                            'Wartość': [total_pallets, len(received_df), len(deleted_df_stats),
-                                       int(total_qty), int(received_qty), int(deleted_qty),
-                                       unique_articles, f"{avg_per_pallet:.1f}"],
-                        }
-                    else:
-                        summary_data = {
-                            'Wskaźnik': [f'Liczba {operation_name} palet', f'Liczba {operation_name} sztuk', 
-                                        'Unikalne artykuły', 'Średnio sztuk na palecie'],
-                            'Wartość': [total_pallets, int(total_qty), unique_articles, f"{avg_per_pallet:.1f}"],
-                        }
-                    
-                    summary_data['Okres'] = [f"{stat_start.strftime('%d.%m.%Y')} - {stat_end.strftime('%d.%m.%Y')}"] * len(summary_data['Wskaźnik'])
-                    summary_data['Mandant'] = [stat_mandant] * len(summary_data['Wskaźnik'])
-                    summary_data['Typ operacji'] = [stat_operation] * len(summary_data['Wskaźnik'])
-                    
-                    summary_df = pd.DataFrame(summary_data)
-                    summary_df.to_excel(writer, sheet_name='Podsumowanie', index=False)
-                    
-                    # Sheet 2: Daily statistics
-                    daily_stats.reset_index().rename(columns={'index': 'Data'}).to_excel(
-                        writer, sheet_name='Dzienne statystyki', index=False
-                    )
-                    
-                    # Sheet 3: Top articles
-                    if stat_operation == "Oba":
-                        with pd.ExcelWriter(output, engine='openpyxl', mode='a') as writer:
-                            top_received.reset_index().to_excel(writer, sheet_name='Top przyjęte', index=False)
-                            top_deleted.reset_index().to_excel(writer, sheet_name='Top usunięte', index=False)
-                    else:
-                        top_articles.reset_index().to_excel(writer, sheet_name='Top artykuły', index=False)
-                    
-                    # Sheet 4: Raw data
-                    stats_df[['MANDANT', 'ARTIKELNR', 'ARTBEZ1', 'QUANTITY', 'LHMNR', 'PLATZ', 'IN_DATE', 'OUT_DATE']].to_excel(
-                        writer, sheet_name='Dane surowe', index=False
-                    )
-                
-                return output.getvalue()
+            summary_data['Okres'] = [f"{stat_start.strftime('%d.%m.%Y')} - {stat_end.strftime('%d.%m.%Y')}"] * len(summary_data['Wskaźnik'])
+            summary_data['Mandant'] = [stat_mandant] * len(summary_data['Wskaźnik'])
+            summary_data['Typ operacji'] = [stat_operation] * len(summary_data['Wskaźnik'])
             
-            # Download button
-            excel_data = create_excel_report()
-            st.download_button(
-                label="📥 Pobierz pełny raport Excel",
-                data=excel_data,
-                file_name=f"raport_statystyk_{stat_operation}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="stat_export_button"  # UNIQUE KEY
-            )
+            summary_df = pd.DataFrame(summary_data)
+            summary_df.to_excel(writer, sheet_name='Podsumowanie', index=False)
             
-            st.caption("Raport zawiera: podsumowanie, statystyki dzienne, top artykuły i dane surowe")
+            # Sheet 2: Daily statistics
+            daily_stats_reset = daily_stats.reset_index().rename(columns={'index': 'Data'})
+            daily_stats_reset.to_excel(writer, sheet_name='Dzienne statystyki', index=False)
             
-        else:
-            st.warning("Brak danych dla wyбранych filtrów.")
-    else:
-        st.info("Załaduj plik CSV w głównej zakładce, aby zobaczyć statystyki.")
+            # Sheet 3: Top articles
+            if stat_operation == "Oba":
+                if not top_received.empty:
+                    top_received.reset_index().to_excel(writer, sheet_name='Top przyjęte', index=False)
+                if not top_deleted.empty:
+                    top_deleted.reset_index().to_excel(writer, sheet_name='Top usunięte', index=False)
+            else:
+                if not top_articles.empty:
+                    top_articles.reset_index().to_excel(writer, sheet_name='Top artykuły', index=False)
+            
+            # Sheet 4: Raw data
+            if not stats_df.empty:
+                stats_df[['MANDANT', 'ARTIKELNR', 'ARTBEZ1', 'QUANTITY', 'LHMNR', 'PLATZ', 'IN_DATE', 'OUT_DATE']].to_excel(
+                    writer, sheet_name='Dane surowe', index=False
+                )
+        
+        return output.getvalue()
+    
+    # Download button
+    try:
+        excel_data = create_excel_report()
+        st.download_button(
+            label="📥 Pobierz pełny raport Excel",
+            data=excel_data,
+            file_name=f"raport_statystyk_{stat_operation}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="stat_export_button_fixed"
+        )
+        
+        st.caption("Raport zawiera: podsumowanie, statystyki dzienne, top artykuły i dane surowe")
+        
+    except Exception as e:
+        st.error(f"Błąd podczas tworzenia raportu Excel: {e}")
+        st.info("Spróbuj wybrać inny zakres danych lub typ operacji")
 
 # --------------------
 # Tab: Settings (placeholder)
