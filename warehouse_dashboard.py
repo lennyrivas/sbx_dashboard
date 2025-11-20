@@ -127,88 +127,101 @@ with tab_main:
         st.info(STR["no_file"])
         st.stop()
 
-    # --------------------
-    # Read main CSV (semicolon)
-    # --------------------
+# --------------------
+# Read main CSV (semicolon)
+# --------------------
+try:
+    if uploaded.name.lower().endswith(".csv") or uploaded.name.lower().endswith(".txt"):
+        df_raw = pd.read_csv(uploaded, sep=';', dtype=str, encoding='utf-8')
+    else:
+        # try reading as csv anyway
+        df_raw = pd.read_csv(uploaded, sep=';', dtype=str, encoding='utf-8')
+except Exception:
     try:
-        if uploaded.name.lower().endswith(".csv") or uploaded.name.lower().endswith(".txt"):
-            df_raw = pd.read_csv(uploaded, sep=';', dtype=str, encoding='utf-8')
-        else:
-            # try reading as csv anyway
-            df_raw = pd.read_csv(uploaded, sep=';', dtype=str, encoding='utf-8')
-    except Exception:
-        try:
-            uploaded.seek(0)
-            df_raw = pd.read_csv(uploaded, sep=';', dtype=str, encoding='latin-1')
-        except Exception as e:
-            st.error(f"Błąd wczytywania pliku: {e}")
-            st.stop()
-
-    df_raw.columns = [c.strip() for c in df_raw.columns]
-    cols_map = {c.upper(): c for c in df_raw.columns}
-    required = ["MANDANT","ARTIKELNR","ARTBEZ1","QUANTITY","LHMNR","ZUSTAND","PLATZ","IN_DATE","OUT_DATE"]
-    missing = [r for r in required if r not in cols_map]
-    if missing:
-        st.error(f"Plik nie zawiera wymaganych kolumn: {', '.join(missing)}")
+        uploaded.seek(0)
+        df_raw = pd.read_csv(uploaded, sep=';', dtype=str, encoding='latin-1')
+    except Exception as e:
+        st.error(f"Błąd wczytywania pliku: {e}")
         st.stop()
 
-    df = df_raw[[cols_map[c] for c in required]].copy()
-    df.columns = required
+df_raw.columns = [c.strip() for c in df_raw.columns]
+cols_map = {c.upper(): c for c in df_raw.columns}
+required = ["MANDANT","ARTIKELNR","ARTBEZ1","QUANTITY","LHMNR","ZUSTAND","PLATZ","IN_DATE","OUT_DATE"]
+missing = [r for r in required if r not in cols_map]
+if missing:
+    st.error(f"Plik nie zawiera wymaganych kolumn: {', '.join(missing)}")
+    st.stop()
 
-    # Keep only mandants 351/352 but allow user to select which one to view
-    df = df[df["MANDANT"].astype(str).isin(["351","352"])].copy()
+df = df_raw[[cols_map[c] for c in required]].copy()
+df.columns = required
 
-    # Normalize and parse types
-    df["ARTIKELNR"] = df["ARTIKELNR"].astype(str).str.strip().str.upper()
-    df["ARTBEZ1"] = df["ARTBEZ1"].astype(str).str.strip()
-    df["QUANTITY"] = pd.to_numeric(df["QUANTITY"].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-    df["IN_DATE"] = pd.to_datetime(df["IN_DATE"], dayfirst=True, errors='coerce')
-    df["OUT_DATE"] = pd.to_datetime(df["OUT_DATE"], dayfirst=True, errors='coerce')
-    df["LHMNR"] = df["LHMNR"].astype(str)
+# Keep only mandants 351/352 but allow user to select which one to view
+df = df[df["MANDANT"].astype(str).isin(["351","352"])].copy()
 
-    # populate artikel selector based on selected mandant
-    artikel_options = sorted(df[df["MANDANT"].astype(str) == selected_mandant]["ARTIKELNR"].dropna().unique().tolist())
-    selected_artikel = st.sidebar.multiselect(STR["artikel"], options=artikel_options, default=[])
+# Normalize and parse types
+df["ARTIKELNR"] = df["ARTIKELNR"].astype(str).str.strip().str.upper()
+df["ARTBEZ1"] = df["ARTBEZ1"].astype(str).str.strip()
+df["QUANTITY"] = pd.to_numeric(df["QUANTITY"].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+df["IN_DATE"] = pd.to_datetime(df["IN_DATE"], dayfirst=True, errors='coerce')
+df["OUT_DATE"] = pd.to_datetime(df["OUT_DATE"], dayfirst=True, errors='coerce')
+df["LHMNR"] = df["LHMNR"].astype(str)
 
-    # --------------------
-    # Filtering by chosen controls
-    # --------------------
-    date_field = "OUT_DATE" if mode == STR["mode_deleted"] else "IN_DATE"
+# СОХРАНИТЬ ДАННЫЕ В SESSION STATE ДЛЯ ОБНОВЛЕНИЯ ТАБЛИЦЫ
+if 'main_data' not in st.session_state:
+    st.session_state.main_data = df
+else:
+    st.session_state.main_data = df
 
-    mask = (df["MANDANT"].astype(str) == selected_mandant)
-    if selected_artikel:
-        mask &= df["ARTIKELNR"].isin([s.strip().upper() for s in selected_artikel])
-    # date filter: allow NaT to be excluded
-    mask &= df[date_field].between(pd.Timestamp(date_start), pd.Timestamp(date_end))
-    filtered = df[mask].copy()
+# populate artikel selector based on selected mandant
+artikel_options = sorted(df[df["MANDANT"].astype(str) == selected_mandant]["ARTIKELNR"].dropna().unique().tolist())
+selected_artikel = st.sidebar.multiselect(STR["artikel"], options=artikel_options, default=[])
 
-    # Deleted definition: PLATZ startswith WA -> deleted; else available
-    filtered["IS_DELETED"] = filtered["PLATZ"].fillna("").astype(str).str.upper().str.startswith("WA")
-    deleted_df = filtered[filtered["IS_DELETED"]].copy()
+# --------------------
+# Filtering by chosen controls
+# --------------------
+date_field = "OUT_DATE" if mode == STR["mode_deleted"] else "IN_DATE"
 
-    # --------------------
-    # Metrics
-    # --------------------
-    col1, col2, col3 = st.columns([1,1,2])
-    col1.metric("Wybrane wiersze", f"{len(filtered):,}")
-    col2.metric("Usunięte palety (wg PLATZ)", f"{len(deleted_df):,}")
-    total_qty = deleted_df["QUANTITY"].sum()
-    col3.metric("Suma sztuk na wybranych paletach", f"{int(total_qty) if not np.isnan(total_qty) else 0:,}")
+# ИСПОЛЬЗОВАТЬ ДАННЫЕ ИЗ SESSION STATE ДЛЯ ОБЕСПЕЧЕНИЯ ОБНОВЛЕНИЯ
+current_df = st.session_state.main_data
 
-    # --------------------
-    # Show filtered pallets (aggrid)
-    # --------------------
-    st.subheader(STR["table_result"])
-    cols_show = ["MANDANT","ARTIKELNR","ARTBEZ1","QUANTITY","LHMNR","ZUSTAND","PLATZ","IN_DATE","OUT_DATE","IS_DELETED"]
-    df_show = filtered[cols_show].sort_values(by="OUT_DATE", ascending=False).reset_index(drop=True)
+mask = (current_df["MANDANT"].astype(str) == selected_mandant)
+if selected_artikel:
+    mask &= current_df["ARTIKELNR"].isin([s.strip().upper() for s in selected_artikel])
+# date filter: allow NaT to be excluded
+mask &= current_df[date_field].between(pd.Timestamp(date_start), pd.Timestamp(date_end))
+filtered = current_df[mask].copy()
 
-    gb1 = GridOptionsBuilder.from_dataframe(df_show)
-    gb1.configure_default_column(filter=True, sortable=True, resizable=True)
-    gb1.configure_column("IN_DATE", type=["dateColumnFilter","customDateTimeFormat"], custom_format_string='dd.MM.yyyy HH:mm', pivot=False)
-    gb1.configure_column("OUT_DATE", type=["dateColumnFilter","customDateTimeFormat"], custom_format_string='dd.MM.yyyy HH:mm', pivot=False)
-    gb1.configure_column("IS_DELETED", header_name="Usunięte", width=100)
-    grid1 = AgGrid(df_show, gridOptions=gb1.build(), theme="streamlit", update_mode=GridUpdateMode.NO_UPDATE, fit_columns_on_grid_load=False)
+# Deleted definition: PLATZ startswith WA -> deleted; else available
+filtered["IS_DELETED"] = filtered["PLATZ"].fillna("").astype(str).str.upper().str.startswith("WA")
+deleted_df = filtered[filtered["IS_DELETED"]].copy()
 
+# --------------------
+# Metrics
+# --------------------
+col1, col2, col3 = st.columns([1,1,2])
+col1.metric("Wybrane wiersze", f"{len(filtered):,}")
+col2.metric("Usunięte palety (wg PLATZ)", f"{len(deleted_df):,}")
+total_qty = deleted_df["QUANTITY"].sum()
+col3.metric("Suma sztuk na wybranych paletach", f"{int(total_qty) if not np.isnan(total_qty) else 0:,}")
+
+# --------------------
+# Show filtered pallets (aggrid)
+# --------------------
+st.subheader(STR["table_result"])
+cols_show = ["MANDANT","ARTIKELNR","ARTBEZ1","QUANTITY","LHMNR","ZUSTAND","PLATZ","IN_DATE","OUT_DATE","IS_DELETED"]
+df_show = filtered[cols_show].sort_values(by="OUT_DATE", ascending=False).reset_index(drop=True)
+
+gb1 = GridOptionsBuilder.from_dataframe(df_show)
+gb1.configure_default_column(filter=True, sortable=True, resizable=True)
+gb1.configure_column("IN_DATE", type=["dateColumnFilter","customDateTimeFormat"], custom_format_string='dd.MM.yyyy HH:mm', pivot=False)
+gb1.configure_column("OUT_DATE", type=["dateColumnFilter","customDateTimeFormat"], custom_format_string='dd.MM.yyyy HH:mm', pivot=False)
+gb1.configure_column("IS_DELETED", header_name="Usunięte", width=100)
+grid1 = AgGrid(df_show, gridOptions=gb1.build(), theme="streamlit", update_mode=GridUpdateMode.NO_UPDATE, fit_columns_on_grid_load=False)
+
+# ДОБАВИТЬ КНОПКУ ДЛЯ ПРИНУДИТЕЛЬНОГО ОБНОВЛЕНИЯ (ОПЦИОНАЛЬНО)
+if st.button("Odśwież widok tabeli"):
+    st.rerun()
+    
     # # --------------------
     # # Summary of deleted by article (aggrid)
     # # --------------------
