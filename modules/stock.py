@@ -22,14 +22,12 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date):
 
     # 🎯 ШАГ 1: Базовый фильтр mandant
     df_filtered = df[df["MANDANT"].astype(str) == selected_mandant].copy()
-    st.info(f"📊 После mandant {selected_mandant}: **{len(df_filtered):,}** строк")
 
     # 🎯 ШАГ 1.5: ✅ ФИЛЬТР ZUSTAND (только паллеты НА СКЛАДЕ)
     zustand_stock = ["401", "460"]
     df_filtered = df_filtered[
         df_filtered["ZUSTAND"].astype(str).isin(zustand_stock)
     ].copy()
-    st.info(f"📊 После ZUSTAND {zustand_stock}: **{len(df_filtered):,}** строк")
 
 # 🎯 ШАГ 1.6: Если OUT_DATE пустой, ZUSTAND должен быть строго 401
     mask_out_null = df_filtered["OUT_DATE"].isnull()
@@ -38,8 +36,6 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date):
     # Убираем такие палеты
     removed_count = wrong_zustand_mask.sum()
     if removed_count > 0:
-        st.info(f"🧹 Убрано палет с OUT_DATE=NULL и ZUSTAND != 401: {removed_count}")
-
     df_filtered = df_filtered[~wrong_zustand_mask].copy()
 
 
@@ -56,7 +52,6 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date):
 
     df_filtered = df_filtered[mask_platz].copy()
     df_filtered = df_filtered.drop("PLATZ_UPPER", axis=1)
-    st.info(f"📊 После PLATZ {'|'.join(platz_prefixes)}*: **{len(df_filtered):,}** строк")
     
     # 🎯 ШАГ 2: СТРОГАЯ ФИЛЬТРАЦИЯ ПО ДАТЕ
     # IN_DATE < дата (принята ДО начала дня)
@@ -69,12 +64,10 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date):
     )
     
     df_stock_raw = df_filtered[mask_in & mask_out].copy()
-    st.info(f"📊 После фильтра даты: **{len(df_stock_raw):,}** строк")
 
     # 🔍 Диагностика: сколько PID имеют >1 записи после фильтра по дате
     dup_lhmnr = df_stock_raw["LHMNR"].value_counts()
     multi_lhmnr_count = (dup_lhmnr > 1).sum()
-    st.info(f"🔍 PID с несколькими записями после фильтра по дате: {multi_lhmnr_count}")
 
 
 
@@ -84,13 +77,11 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date):
     df_stock = df_stock_raw.sort_values("IN_DATE", ascending=False).drop_duplicates(
         subset=["LHMNR"], keep="first"
     )
-    st.info(f"📊 После дедупликации LHMNR: **{len(df_stock):,}** уникальных PID")
     
     # 🎯 ШАГ 4: Фильтр артикулов (после дедупликации)
     if selected_artikel:
         artikel_list = [a.strip().upper() for a in selected_artikel]
         df_stock = df_stock[df_stock["ARTIKELNR"].isin(artikel_list)].copy()
-        st.info(f"📊 После фильтра статьи: **{len(df_stock):,}** строк")
     
     # 🎯 ШАГ 5: Классификация упаковки
     kartony_prefixes, other_packaging_prefixes = load_packaging_config()
