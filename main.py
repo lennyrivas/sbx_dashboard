@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 from modules.orders import render_orders_tab
 from modules.ui_strings import STR
 from utils import load_excluded_articles, save_excluded_articles, load_packaging_config, save_packaging_config
+from modules.settings import render_settings_tab
+from modules.stock import render_stock_tab
 import sys
 from pathlib import Path
 
@@ -16,16 +18,16 @@ st.set_page_config(page_title="Sprintbox — Raport palet", layout="wide", initi
 # -------------------- 
 # Dark theme CSS
 # --------------------
-st.markdown("""
-<style>
-  :root { color-scheme: dark; }
-  .stApp { background-color: #0f1115; color: #d7dde5; }
-  [data-testid="stSidebar"] { background-color: #0b0c0e; color: #d7dde5; }
-  .stButton>button, .stDownloadButton>button { border-radius: 6px; }
-  .ag-theme-streamlit { --ag-background-color: #0f1115; --ag-odd-row-background-color: #111318; --ag-row-hover-color: #1a222a; --ag-header-background-color: #0c1013; --ag-foreground-color: #d7dde5; color: #d7dde5; }
-  .small-note { color:#9fb0c8; font-size:0.9em; }
-</style>
-""", unsafe_allow_html=True)
+# st.markdown("""
+# <style>
+#   :root { color-scheme: dark; }
+#   .stApp { background-color: #0f1115; color: #d7dde5; }
+#   [data-testid="stSidebar"] { background-color: #0b0c0e; color: #d7dde5; }
+#   .stButton>button, .stDownloadButton>button { border-radius: 6px; }
+#   .ag-theme-streamlit { --ag-background-color: #0f1115; --ag-odd-row-background-color: #111318; --ag-row-hover-color: #1a222a; --ag-header-background-color: #0c1013; --ag-foreground-color: #d7dde5; color: #d7dde5; }
+#   .small-note { color:#9fb0c8; font-size:0.9em; }
+# </style>
+# """, unsafe_allow_html=True)
 
 st.title(STR["title"])
 
@@ -44,7 +46,6 @@ selected_mandant = st.sidebar.selectbox(STR["mandant"], options=available_mandan
 # Mode: usunięte vs przyjęte
 mode = st.sidebar.radio(STR["mode"], (STR["mode_deleted"], STR["mode_received"]))
 
-# Date mode
 # Date mode
 st.sidebar.markdown(STR["date_mode"])
 yesterday = (datetime.now() - timedelta(days=1)).date()
@@ -84,7 +85,7 @@ if uploaded is None:
     st.stop()
 
 # -------------------- 
-# Ładowanie i filtrowanie palet (wspólne dla всей analizy)
+# Ładowanie i filtrowanie palet (wspólne dla całej analizy)
 # --------------------
 try:
     if uploaded.name.lower().endswith(".csv") or uploaded.name.lower().endswith(".txt"):
@@ -101,7 +102,7 @@ except Exception:
 
 df_raw.columns = [c.strip() for c in df_raw.columns]
 cols_map = {c.upper(): c for c in df_raw.columns}
-required = ["MANDANT","ARTIKELNR","ARTBEZ1","QUANTITY","LHMNR","ZUSTAND","PLATZ","IN_DATE","OUT_DATE"]
+required = ["MANDANT","ARTIKELNR","ARTBEZ1","QUANTITY","LHMNR","ZUSTAND","PLATZ","IN_DATE","OUT_DATE","GEANDERT_UM", "CHARGE1"]
 missing = [r for r in required if r not in cols_map]
 if missing:
     st.error(f"Plik nie zawiera wymaganych kolumn: {', '.join(missing)}")
@@ -119,7 +120,9 @@ df["ARTBEZ1"] = df["ARTBEZ1"].astype(str).str.strip()
 df["QUANTITY"] = pd.to_numeric(df["QUANTITY"].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
 df["IN_DATE"] = pd.to_datetime(df["IN_DATE"], dayfirst=True, errors='coerce')
 df["OUT_DATE"] = pd.to_datetime(df["OUT_DATE"], dayfirst=True, errors='coerce')
-df["LHMNR"] = df["LHMNR"].astype(str)
+df["GEANDERT_UM"] = pd.to_datetime(df["GEANDERT_UM"], dayfirst=True, errors='coerce') 
+df["CHARGE1"] = df["CHARGE1"].fillna("").astype(str).str.strip()
+df["LHMNR"] = df["LHMNR"].astype(str).str.strip()
 
 # Artykuły dla filtrów
 artikel_options = sorted(df[df["MANDANT"].astype(str) == selected_mandant]["ARTIKELNR"].dropna().unique().tolist())
@@ -195,67 +198,64 @@ def render_settings_tab():
     # Кнопки сохранения
     col_save1, col_save2, _ = st.columns(3)
     with col_save1:
-        if st.button("💾 Zapisz исключения", type="secondary"):
+        if st.button("💾 Zapisz wyjątki", type="secondary"):
             new_exact = [x.strip() for x in exact_input.splitlines() if x.strip()]
             new_prefix = [x.strip() for x in prefix_input.splitlines() if x.strip()]
             if save_excluded_articles(new_exact, new_prefix):
-                st.success("✅ Исключения сохранены")
+                st.success("✅ Wyjątki zapisane pomyślnie")
     
     with col_save2:
         if st.button("📦 Zapisz opakowania", type="primary"):
             new_kartony = [x.strip() for x in kartony_input.splitlines() if x.strip()]
             new_other = [x.strip() for x in other_input.splitlines() if x.strip()]
             if save_packaging_config(new_kartony, new_other):
-                st.success("✅ Конфигурация упаковки сохранена")
+                st.success("✅ Konfiguracja opakowań zapisana pomyślnie")
 
 
 # Создание вкладок (ПОСЛЕ определения функции!)
-tab_analysis, tab_settings = st.tabs(["Analiza zamówień vs palet", "⚙️ Ustawienia"])
+tab_analysis, tab_stock, tab_settings = st.tabs([
+    "Analiza zamówień vs palet",
+    "Stany magazynowe",
+    "⚙️ Ustawienia"
+])
 
 with tab_analysis:
-    st.header("⚖️ Analiza dodanych i usuniętych palet")  # ← Изменён заголовок
-    
-# Metrics
+    st.header("⚖️ Analiza dodanych i usuniętych palet")
+    # Metrics
     col1, col2, col3 = st.columns([1,1,2])
     deleted_pallets = filtered_pallets_df[filtered_pallets_df["IS_DELETED"]]
 
-    # col1.metric("Wybrane palety", f"{len(filtered_pallets_df):,}")
-    # col2.metric("Usunięte palety", f"{len(deleted_pallets):,}")
-
-    # Новая логика для col3
-    # Metrics — новая логика с 4 колонками
     if selected_mandant == "352":
-        # Mandant 352: 4 метрики
         col1, col2, col3, col4 = st.columns(4)
         deleted_pallets = filtered_pallets_df[filtered_pallets_df["IS_DELETED"]]
-        
         col1.metric("Wybrane palety", f"{len(filtered_pallets_df):,}")
         col2.metric("Usunięte palety", f"{len(deleted_pallets):,}")
-        
-        # Статистика упаковки
+
         from utils import load_packaging_config
         kartony_prefixes, _ = load_packaging_config()
-        
         kartony_count = deleted_pallets[
             deleted_pallets["ARTIKELNR"].str.startswith(tuple(kartony_prefixes), na=False)
         ].shape[0]
         inne_count = len(deleted_pallets) - kartony_count
-        
         col3.metric("Usunięte kartony", f"{kartony_count:,}")
         col4.metric("Inne opakowania", f"{inne_count:,}")
-        
     else:
-        # Mandant 351: только 2 метрики (убираем Suma sztuk)
         col1, col2 = st.columns(2)
         deleted_pallets = filtered_pallets_df[filtered_pallets_df["IS_DELETED"]]
-        
         col1.metric("Wybrane palety", f"{len(filtered_pallets_df):,}")
         col2.metric("Usunięte palety", f"{len(deleted_pallets):,}")
 
-    
-    # Główna funkcja
     render_orders_tab(artikel_options, filtered_pallets_df, selected_artikel)
 
+with tab_stock:
+    # 👉 новая вкладка складских остатков
+    render_stock_tab(
+        df,                 # полный очищенный DataFrame (база данных)
+        selected_mandant,   # выбранный mandant из sidebar
+        selected_artikel,   # список выбранных artykułów из sidebar
+        STR                 # словарь строк UI
+    )
+
 with tab_settings:
-    render_settings_tab()  # ← Теперь функция определена выше!
+    render_settings_tab()
 

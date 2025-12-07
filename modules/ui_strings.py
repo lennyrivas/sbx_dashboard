@@ -34,13 +34,23 @@ STR = {
     "invalid_artikel": "Nieprawidłowy ARTIKELNR. Wybierz z listy dostępnych artykułów.",
     "select_artikel": "Wybierz ARTIKELNR...",
     "delete": "Usuń",
-    "debug_filters": "🔍 ДЕБАГ ФИЛЬТРОВ",
-    "debug_info": "🔍 ДЕБАГ ИНФОРМАЦИЯ",
+    "debug_filters": "🔍 Debug filtrów",
+    "debug_info": "🔍 Debug info",
     "settings": "Ustawienia",
     "settings_cartons": "Kartony (wyjątki)",
     "settings_pallets": "Palety/ramy",
     "settings_other": "Inne opakowania",
     "add_prefix": "Dodaj prefix",
-    "remove_prefix": "Usuń prefix"
-
+    "remove_prefix": "Usuń prefix",
+    "stock_tab": "Stan magazynowy",
+    "stock_table_pids": "Stan magazynowy (z PID)",
+    "stock_table_agg": "Stan magazynowy (agregat)",
+    "stock_warning": "UWAGA: Pamiętaj, że aktualne stany magazynowe są poprawne tylko na moment załadowania pliku z danymi. Jeśli zakres dat wybrany przy generowaniu pliku był zbyt krótki, nie wszystkie palety mogą być widoczne. Dla pełnej i prawidłowej kontroli stanów magazynowych, plik w schaeflein.ihka.de powinien być generowany z datami od 01.01.2016 do dzisiaj.",
+    "metric_total_pallets": "Łączna liczba palet",
+    "metric_cartons":"Kartony",	#Метрика.
+    "metric_other_pkg":"Inne opakowania",	#Метрика.
+    "checkbox_cartons_only":"Pokaż tylko kartony",	#Чекбокс фильтрации.
+    "stock_date_title":"Analiza stanów magazynowych na datę",	#Заголовок для выбора даты.
+    "stock_date_label":"Wybierz datę/zakres (historia)",	#Лейбл виджета выбора даты.
+    "stock_date_range_label":"Zakres dat dla analizy historycznej"	#Лейбл для графика (будущее).
 }
