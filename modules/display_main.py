@@ -7,25 +7,27 @@ import numpy as np
 from modules.ui_strings import STR
 
 
-def classify_pallet(artikel, cartons_list, pallets_list, other_list):
+def classify_pallet(
+    artikelnr: str,
+    kartony_prefixes: list[str],
+    pallets_frames_prefixes: list[str],   # можно оставить параметр, но не использовать
+    other_packaging_prefixes: list[str],
+) -> str:
     """
-    Классификация типа паллеты по ARTIKELNR с учетом настроек.
-    Все нераспознанное считается 'Inne opakowania'.
+    Простая классификация:
+    - "Kartony"      – если ARTIKELNR НАЧИНАЕТСЯ с одного из kartony_prefixes
+    - "Inne opakowania" – всё остальное
     """
-    artikel_prefix = str(artikel).upper()
 
-    for prefix in cartons_list:
-        if artikel_prefix.startswith(prefix) or prefix in artikel_prefix:
+    art = str(artikelnr).strip().upper()
+
+    # 1) Kartony – строго по НАЧАЛУ строки (prefix)
+    for pref in kartony_prefixes:
+        p = str(pref).strip().upper()
+        if p and art.startswith(p):
             return "Kartony"
 
-    for prefix in pallets_list:
-        if artikel_prefix.startswith(prefix) or prefix in artikel_prefix:
-            return "Palety/ramy"
-
-    for prefix in other_list:
-        if artikel_prefix.startswith(prefix) or prefix in artikel_prefix:
-            return "Inne opakowania"
-
+    # 2) Всё, что не попало в kartony, считаем "Inne opakowania"
     return "Inne opakowania"
 
 

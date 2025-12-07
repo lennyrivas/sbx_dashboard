@@ -1,10 +1,12 @@
 {
   "kartony_prefixes": [
-    "83090",
+    "830902",
+    "830905",
     "ZC",
     "568",
     "676",
-    "826"
+    "826",
+    "TKAS"
   ],
   "other_packaging_prefixes": []
 }
