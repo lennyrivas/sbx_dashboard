@@ -29,18 +29,6 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date):
         df_filtered["ZUSTAND"].astype(str).isin(zustand_stock)
     ].copy()
 
-# 🎯 ШАГ 1.6: Если OUT_DATE пустой, ZUSTAND должен быть строго 401
-    mask_out_null = df_filtered["OUT_DATE"].isnull()
-    wrong_zustand_mask = mask_out_null & (df_filtered["ZUSTAND"].astype(str) != "401")
-
-    # Убираем такие палеты
-    removed_count = wrong_zustand_mask.sum()
-    if removed_count > 0:
-    df_filtered = df_filtered[~wrong_zustand_mask].copy()
-
-
-
-
     # 🎯 ШАГ 1.7: ✅ ФИЛЬТР PLATZ (НАЧИНАЕТСЯ с BL*, WE*, WA01*, 02*, 2*)
     platz_prefixes = ["BL", "WE", "WA", "02", "2"]
     df_filtered["PLATZ_UPPER"] = df_filtered["PLATZ"].fillna("").astype(str).str.upper()
@@ -82,6 +70,7 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date):
     if selected_artikel:
         artikel_list = [a.strip().upper() for a in selected_artikel]
         df_stock = df_stock[df_stock["ARTIKELNR"].isin(artikel_list)].copy()
+        st.info(f"📊 После фильтра статьи: **{len(df_stock):,}** строк")
     
     # 🎯 ШАГ 5: Классификация упаковки
     kartony_prefixes, other_packaging_prefixes = load_packaging_config()
