@@ -2,107 +2,218 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from pathlib import Path
+import sys
+
 from modules.orders import render_orders_tab
 from modules.ui_strings import STR
-from utils import load_excluded_articles, save_excluded_articles, load_packaging_config, save_packaging_config
+from utils import (
+    load_excluded_articles,
+    save_excluded_articles,
+    load_packaging_config,
+    save_packaging_config,
+)
 from modules.settings import render_settings_tab
 from modules.stock import render_stock_tab
-import sys
-from pathlib import Path
+from modules.stats import render_stats_tab
 
+# Чтобы можно было импортировать из папки modules
 sys.path.append(str(Path(__file__).parent / "modules"))
 
 
-st.set_page_config(page_title="Sprintbox — Raport palet", layout="wide", initial_sidebar_state="expanded")
+# ==============================
+# Функция фильтров для вкладки Analiza
+# ==============================
 
-# -------------------- 
-# Dark theme CSS
-# --------------------
-# st.markdown("""
-# <style>
-#   :root { color-scheme: dark; }
-#   .stApp { background-color: #0f1115; color: #d7dde5; }
-#   [data-testid="stSidebar"] { background-color: #0b0c0e; color: #d7dde5; }
-#   .stButton>button, .stDownloadButton>button { border-radius: 6px; }
-#   .ag-theme-streamlit { --ag-background-color: #0f1115; --ag-odd-row-background-color: #111318; --ag-row-hover-color: #1a222a; --ag-header-background-color: #0c1013; --ag-foreground-color: #d7dde5; color: #d7dde5; }
-#   .small-note { color:#9fb0c8; font-size:0.9em; }
-# </style>
-# """, unsafe_allow_html=True)
+def render_analysis_filters(df: pd.DataFrame):
+    """
+    Bardzo kompaktowe filtry dla zakładki 'Analiza zamówień vs palet'
+    w jednej linii.
+    """
+
+    st.subheader("🔍 Filtry analizy")
+    
+
+    # Jedna linia: Mandant | Tryb | Daty (tryb + od + do) | Artykuł
+    col_mandant, col_mode, col_dates, col_artikel = st.columns(
+        [0.4, 1.4, 3.2, 1.6]  # ostatnią kolumnę trochę skracamy względem poprzedniej wersji
+    )
+
+    yesterday = (datetime.now() - timedelta(days=1)).date()
+
+    # Mandant – bardzo wąska kolumna, 3 cyfry
+    with col_mandant:
+        selected_mandant = st.selectbox(
+            "Mandant",
+            options=["351", "352"],
+            index=0,
+            key="analysis_mandant",
+        )
+
+    # Tryb: dwa radio – Wyjście (OUT_DATE) / Wejście (IN_DATE)
+    with col_mode:
+        mode_label = st.radio(
+            "Tryb",
+            options=["Wyjście", "Wejście"],
+            index=0,
+            horizontal=True,           # poziomo
+            key="analysis_mode",
+        )
+        date_field = "OUT_DATE" if mode_label == "Wyjście" else "IN_DATE"
+        mode = STR["mode_deleted"] if date_field == "OUT_DATE" else STR["mode_received"]
+
+    # Daty: Dzień / Zakres + Data od + Data do
+    with col_dates:
+        # 3 kolumny wewnątrz: [tryb daty] [od] [do]
+        c_mode, c_from, c_to = st.columns([1.1, 1.1, 1.1])
+
+        with c_mode:
+            date_mode_label = st.radio(
+                "Daty",
+                options=["Dzień", "Zakres"],
+                index=0,
+                horizontal=True,        # teraz poziomo
+                key="analysis_date_mode",
+            )
+
+        if date_mode_label == "Dzień":
+            with c_from:
+                sel_date = st.date_input(
+                    "Data",
+                    value=yesterday,
+                    key="analysis_date_single",
+                )
+            date_start = datetime.combine(sel_date, datetime.min.time())
+            date_end = datetime.combine(sel_date, datetime.max.time())
+            # Rezerwujemy miejsce na "Do", ale bez pola przy trybie "Dzień"
+            with c_to:
+                st.write("")  # pusty placeholder
+                st.write("")
+        else:
+            with c_from:
+                start = st.date_input(
+                    "Od",
+                    value=yesterday - timedelta(days=6),
+                    key="analysis_date_from",
+                )
+            with c_to:
+                end = st.date_input(
+                    "Do",
+                    value=yesterday,
+                    key="analysis_date_to",
+                )
+            date_start = datetime.combine(start, datetime.min.time())
+            date_end = datetime.combine(end, datetime.max.time())
+
+    # Artykuł – z powrotem multiselect, ale w nieco węższej kolumnie
+    with col_artikel:
+        artikel_options = sorted(
+            df[df["MANDANT"].astype(str) == selected_mandant]["ARTIKELNR"]
+            .dropna()
+            .unique()
+            .tolist()
+        )
+        selected_artikel = st.multiselect(
+            "Artykuł (ARTIKELNR)",
+            options=artikel_options,
+            default=[],
+            key="analysis_artikel",
+        )
+
+    # Maski filtrów
+    mask = (df["MANDANT"].astype(str) == selected_mandant)
+
+    if selected_artikel:
+        mask &= df["ARTIKELNR"].isin([s.strip().upper() for s in selected_artikel])
+
+    mask &= df[date_field].between(
+        pd.Timestamp(date_start),
+        pd.Timestamp(date_end),
+    )
+
+    filtered_pallets_df = df[mask].copy()
+
+    # Tu możesz mieć swoją docelową logikę IS_DELETED (ZUSTAND + PLATZ)
+    filtered_pallets_df["IS_DELETED"] = (
+        filtered_pallets_df["PLATZ"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.startswith("WA")
+    )
+
+    # Żadnych technicznych komunikatów pod filtrami
+
+    # Do render_orders_tab:
+    # (lista dostępnych artykułów – weźmiemy z df przefiltrowanego)
+    artikel_options = sorted(filtered_pallets_df["ARTIKELNR"].unique().tolist())
+
+    return (
+        selected_mandant,
+        selected_artikel,
+        mode,
+        date_start,
+        date_end,
+        filtered_pallets_df,
+        artikel_options,
+    )
+
+
+
+
+# ==============================
+# Основная конфигурация страницы
+# ==============================
+st.set_page_config(
+    page_title="Sprintbox — Raport palet",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 st.title(STR["title"])
 
-# -------------------- 
-# Sidebar - wspólne filtry dla wszystkich danych
-# --------------------
-st.sidebar.header(STR["filters"])
 
-# Główny plik CSV z paletami
-uploaded = st.sidebar.file_uploader(STR["upload_csv"], type=["csv", "txt"], key="main_csv")
-
-# Filtry
-available_mandants = ["351", "352"]
-selected_mandant = st.sidebar.selectbox(STR["mandant"], options=available_mandants, index=0)
-
-# Mode: usunięte vs przyjęte
-mode = st.sidebar.radio(STR["mode"], (STR["mode_deleted"], STR["mode_received"]))
-
-# Date mode
-st.sidebar.markdown(STR["date_mode"])
-yesterday = (datetime.now() - timedelta(days=1)).date()
-date_mode = st.sidebar.radio(
-    "Tryb daty", 
-    (STR["single"], STR["range"]), 
-    horizontal=True,
-    label_visibility="visible"
+# ==============================
+# Загрузка файла и подготовка df
+# ==============================
+uploaded = st.sidebar.file_uploader(
+    STR["upload_csv"],
+    type=["csv", "txt"],
+    key="main_csv",
 )
-
-if date_mode == STR["single"]:
-    sel_date = st.sidebar.date_input(
-        STR["single"], 
-        value=yesterday, 
-        key="date_single"
-    )
-    date_start = datetime.combine(sel_date, datetime.min.time())
-    date_end = datetime.combine(sel_date, datetime.max.time())
-else:
-    start = st.sidebar.date_input(
-        STR["from"], 
-        value=yesterday - timedelta(days=6), 
-        key="date_from"
-    )
-    end = st.sidebar.date_input(
-        STR["to"], 
-        value=yesterday, 
-        key="date_to"
-    )
-    
-    date_start = datetime.combine(start, datetime.min.time())
-    date_end = datetime.combine(end, datetime.max.time())
-
 
 if uploaded is None:
     st.info(STR["no_file"])
     st.stop()
 
-# -------------------- 
-# Ładowanie i filtrowanie palet (wspólne dla całej analizy)
-# --------------------
 try:
     if uploaded.name.lower().endswith(".csv") or uploaded.name.lower().endswith(".txt"):
-        df_raw = pd.read_csv(uploaded, sep=';', dtype=str, encoding='utf-8')
+        df_raw = pd.read_csv(uploaded, sep=";", dtype=str, encoding="utf-8")
     else:
-        df_raw = pd.read_csv(uploaded, sep=';', dtype=str, encoding='utf-8')
+        df_raw = pd.read_csv(uploaded, sep=";", dtype=str, encoding="utf-8")
 except Exception:
     try:
         uploaded.seek(0)
-        df_raw = pd.read_csv(uploaded, sep=';', dtype=str, encoding='latin-1')
+        df_raw = pd.read_csv(uploaded, sep=";", dtype=str, encoding="latin-1")
     except Exception as e:
         st.error(f"Błąd wczytywania pliku: {e}")
         st.stop()
 
 df_raw.columns = [c.strip() for c in df_raw.columns]
 cols_map = {c.upper(): c for c in df_raw.columns}
-required = ["MANDANT","ARTIKELNR","ARTBEZ1","QUANTITY","LHMNR","ZUSTAND","PLATZ","IN_DATE","OUT_DATE","GEANDERT_UM", "CHARGE1"]
+required = [
+    "MANDANT",
+    "ARTIKELNR",
+    "ARTBEZ1",
+    "QUANTITY",
+    "LHMNR",
+    "ZUSTAND",
+    "PLATZ",
+    "IN_DATE",
+    "OUT_DATE",
+    "GEANDERT_UM",
+    "CHARGE1",
+]
 missing = [r for r in required if r not in cols_map]
 if missing:
     st.error(f"Plik nie zawiera wymaganych kolumn: {', '.join(missing)}")
@@ -112,90 +223,73 @@ df = df_raw[[cols_map[c] for c in required]].copy()
 df.columns = required
 
 # Tylko mandanty 351/352
-df = df[df["MANDANT"].astype(str).isin(["351","352"])].copy()
+df = df[df["MANDANT"].astype(str).isin(["351", "352"])].copy()
 
 # Normalizacja i typy
 df["ARTIKELNR"] = df["ARTIKELNR"].astype(str).str.strip().str.upper()
 df["ARTBEZ1"] = df["ARTBEZ1"].astype(str).str.strip()
-df["QUANTITY"] = pd.to_numeric(df["QUANTITY"].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-df["IN_DATE"] = pd.to_datetime(df["IN_DATE"], dayfirst=True, errors='coerce')
-df["OUT_DATE"] = pd.to_datetime(df["OUT_DATE"], dayfirst=True, errors='coerce')
-df["GEANDERT_UM"] = pd.to_datetime(df["GEANDERT_UM"], dayfirst=True, errors='coerce') 
+df["QUANTITY"] = pd.to_numeric(
+    df["QUANTITY"].astype(str).str.replace(",", "."),
+    errors="coerce",
+).fillna(0)
+df["IN_DATE"] = pd.to_datetime(df["IN_DATE"], dayfirst=True, errors="coerce")
+df["OUT_DATE"] = pd.to_datetime(df["OUT_DATE"], dayfirst=True, errors="coerce")
+df["GEANDERT_UM"] = pd.to_datetime(df["GEANDERT_UM"], dayfirst=True, errors="coerce")
 df["CHARGE1"] = df["CHARGE1"].fillna("").astype(str).str.strip()
 df["LHMNR"] = df["LHMNR"].astype(str).str.strip()
 
-# Artykuły dla filtrów
-artikel_options = sorted(df[df["MANDANT"].astype(str) == selected_mandant]["ARTIKELNR"].dropna().unique().tolist())
-selected_artikel = st.sidebar.multiselect(STR["artikel"], options=artikel_options, default=[])
 
-# Filtrowanie
-date_field = "OUT_DATE" if mode == STR["mode_deleted"] else "IN_DATE"
-
-mask = (df["MANDANT"].astype(str) == selected_mandant)
-if selected_artikel:
-    mask &= df["ARTIKELNR"].isin([s.strip().upper() for s in selected_artikel])
-mask &= df[date_field].between(pd.Timestamp(date_start), pd.Timestamp(date_end))
-
-filtered_pallets_df = df[mask].copy()
-filtered_pallets_df["IS_DELETED"] = filtered_pallets_df["PLATZ"].fillna("").astype(str).str.upper().str.startswith("WA")
-
-# DEBUG INFO
-st.sidebar.markdown("### 🔍 Debug filtrów")
-st.sidebar.write(f"Mandant: **{selected_mandant}**")
-st.sidebar.write(f"Artykuły: **{selected_artikel}**")
-st.sidebar.write(f"Pole daty: **{date_field}**")
-st.sidebar.write(f"Zakres: **{date_start.date()} → {date_end.date()}**")
-st.sidebar.write(f"Wynik: **{len(filtered_pallets_df)} wierszy**")
-
-def render_settings_tab():
+# ==============================
+# Локальная функция настроек (как у тебя было)
+# ==============================
+def render_local_settings_tab():
     """Расширенные настройки исключений + упаковка"""
     st.header("⚙️ Ustawienia")
-    
-    # Исключения артикулов
+
+    # 1. Исключения артикулов
     st.subheader("1. Artykuły wykluczone z porównań")
     exact_list, prefix_list = load_excluded_articles()
-    
+
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("**Artykuły dokładne**")
         exact_input = st.text_area(
-            label="Artykuły dokładne", 
-            value="\n".join(exact_list), 
-            height=150, 
-            key="exact_input"
+            label="Artykuły dokładne",
+            value="\n".join(exact_list),
+            height=150,
+            key="exact_input",
         )
     with col2:
         st.markdown("**Prefiksy**")
         prefix_input = st.text_area(
-            label="Prefiksy artykułów", 
-            value="\n".join(prefix_list), 
-            height=150, 
-            key="prefix_input"
+            label="Prefiksy artykułów",
+            value="\n".join(prefix_list),
+            height=150,
+            key="prefix_input",
         )
-    
-    # Конфигурация упаковки (картоны)
+
+    # 2. Конфигурация упаковки
     st.subheader("2. Konfiguracja opakowań (Mandant 352)")
     kartony_prefixes, other_prefixes = load_packaging_config()
-    
+
     col3, col4 = st.columns(2)
     with col3:
         st.markdown("**Prefiksy kartonów**")
         kartony_input = st.text_area(
-            label="Prefiksy kartonów", 
-            value="\n".join(kartony_prefixes), 
-            height=150, 
-            key="kartony_input"
+            label="Prefiksy kartonów",
+            value="\n".join(kartony_prefixes),
+            height=150,
+            key="kartony_input",
         )
     with col4:
         st.markdown("**Inne opakowania**")
         other_input = st.text_area(
-            label="Inne opakowania", 
-            value="\n".join(other_prefixes), 
-            height=150, 
-            key="other_input"
+            label="Inne opakowania",
+            value="\n".join(other_prefixes),
+            height=150,
+            key="other_input",
         )
-    
-    # Кнопки сохранения
+
     col_save1, col_save2, _ = st.columns(3)
     with col_save1:
         if st.button("💾 Zapisz wyjątki", type="secondary"):
@@ -203,7 +297,7 @@ def render_settings_tab():
             new_prefix = [x.strip() for x in prefix_input.splitlines() if x.strip()]
             if save_excluded_articles(new_exact, new_prefix):
                 st.success("✅ Wyjątki zapisane pomyślnie")
-    
+
     with col_save2:
         if st.button("📦 Zapisz opakowania", type="primary"):
             new_kartony = [x.strip() for x in kartony_input.splitlines() if x.strip()]
@@ -212,50 +306,75 @@ def render_settings_tab():
                 st.success("✅ Konfiguracja opakowań zapisana pomyślnie")
 
 
-# Создание вкладок (ПОСЛЕ определения функции!)
-tab_analysis, tab_stock, tab_settings = st.tabs([
-    "Analiza zamówień vs palet",
-    "Stany magazynowe",
-    "⚙️ Ustawienia"
-])
+# ==============================
+# Вкладки
+# ==============================
+tab_analysis, tab_stock, tab_stats, tab_settings = st.tabs(
+    [
+        "Analiza zamówień vs palet",
+        "Stany magazynowe",
+        "📊 Statystyka",
+        "⚙️ Ustawienia",
+    ]
+)
 
 with tab_analysis:
     st.header("⚖️ Analiza dodanych i usuniętych palet")
-    # Metrics
-    col1, col2, col3 = st.columns([1,1,2])
+
+    # 👉 Фильтры теперь рисуются здесь, в этой вкладке
+    (
+        selected_mandant,
+        selected_artikel,
+        mode,
+        date_start,
+        date_end,
+        filtered_pallets_df,
+        artikel_options,
+    ) = render_analysis_filters(df)
+
+    # После фильтров считаем deleted_pallets и метрики
     deleted_pallets = filtered_pallets_df[filtered_pallets_df["IS_DELETED"]]
 
     if selected_mandant == "352":
         col1, col2, col3, col4 = st.columns(4)
-        deleted_pallets = filtered_pallets_df[filtered_pallets_df["IS_DELETED"]]
         col1.metric("Wybrane palety", f"{len(filtered_pallets_df):,}")
         col2.metric("Usunięte palety", f"{len(deleted_pallets):,}")
 
-        from utils import load_packaging_config
         kartony_prefixes, _ = load_packaging_config()
         kartony_count = deleted_pallets[
-            deleted_pallets["ARTIKELNR"].str.startswith(tuple(kartony_prefixes), na=False)
+            deleted_pallets["ARTIKELNR"].str.startswith(
+                tuple(kartony_prefixes),
+                na=False,
+            )
         ].shape[0]
         inne_count = len(deleted_pallets) - kartony_count
         col3.metric("Usunięte kartony", f"{kartony_count:,}")
         col4.metric("Inne opakowania", f"{inne_count:,}")
     else:
         col1, col2 = st.columns(2)
-        deleted_pallets = filtered_pallets_df[filtered_pallets_df["IS_DELETED"]]
         col1.metric("Wybrane palety", f"{len(filtered_pallets_df):,}")
         col2.metric("Usunięte palety", f"{len(deleted_pallets):,}")
 
-    render_orders_tab(artikel_options, filtered_pallets_df, selected_artikel)
-
-with tab_stock:
-    # 👉 новая вкладка складских остатков
-    render_stock_tab(
-        df,                 # полный очищенный DataFrame (база данных)
-        selected_mandant,   # выбранный mandant из sidebar
-        selected_artikel,   # список выбранных artykułów из sidebar
-        STR                 # словарь строк UI
+    render_orders_tab(
+        artikel_options,
+        filtered_pallets_df,
+        selected_artikel,
     )
 
-with tab_settings:
-    render_settings_tab()
 
+with tab_stock:
+    render_stock_tab(
+        df,                # полный очищенный DataFrame
+        selected_mandant,  # текущий mandant из фильтров анализа
+        selected_artikel,  # текущий список artykułów (можно потом отделить)
+        STR,
+    )
+
+with tab_stats:
+    render_stats_tab(df, STR)
+
+with tab_settings:
+    # Можно использовать либо render_settings_tab из modules.settings,
+    # либо локальную реализацию выше; выбирай один вариант:
+    # render_settings_tab(df, STR)  # если такая сигнатура есть
+    render_local_settings_tab()

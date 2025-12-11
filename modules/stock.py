@@ -197,6 +197,8 @@ def build_stock_history(
 # --- Рендеринг вкладки ---
 
 def render_stock_tab(df, selected_mandant, selected_artikel, STR):
+
+    
     """
     Основная функция рендеринга вкладки Stany magazynowe.
     """
@@ -327,42 +329,33 @@ def render_stock_tab(df, selected_mandant, selected_artikel, STR):
             hide_index=True
         )
 
+    
 
-    # 4b. История количества палет (график)
+    # 7. Предупреждение
+    st.markdown("---")
+    st.markdown(f'<div class="small-note">{STR["stock_warning"]}</div>', unsafe_allow_html=True)
+
+
+def render_stock_history(
+    df,
+    selected_mandant_stock,
+    selected_artikel_stock,
+    history_start,
+    history_end,
+    show_cartons_only,
+    STR,
+    widget_prefix: str = "",
+):
+
+    """
+    Рисует блок '📈 Historia liczby palet na magazynie':
+    - выбор диапазона дат,
+    - чекбоксы серий,
+    - сам график.
+    """
+
     st.subheader("📈 Historia liczby palet na magazynie")
 
-    # Диапазон дат для графика (по умолчанию последние 30 дней от выбранной даты)
-    col_hist_start, col_hist_end = st.columns(2)
-    with col_hist_start:
-        # Определяем минимальную и максимальную даты в данных (для ограничений ввода)
-        min_date = df["IN_DATE"].min().date()
-        max_date = df["IN_DATE"].max().date()
-        # Дефолтное начало: максимум из (min_date, selected_date_stock - 29 дней)
-        raw_default_start = (selected_date_stock - timedelta(days=29)).date()
-        default_start = max(min_date, min(raw_default_start, max_date))
-
-        history_start = st.date_input(
-            "Data od",
-            value=default_start,
-            min_value=min_date,
-            max_value=max_date,
-            key="stock_history_start",
-        )
-
-    with col_hist_end:
-        # Дефолтный конец: не позже max_date
-        raw_default_end = selected_date_stock.date()
-        default_end = max(min_date, min(raw_default_end, max_date))
-
-        history_end = st.date_input(
-            "Data do",
-            value=default_end,
-            min_value=history_start,
-            max_value=max_date,
-            key="stock_history_end",
-        )
-
-    # Строим историю по выбранному диапазону
     history_df = build_stock_history(
         df=df,
         selected_mandant=selected_mandant_stock,
@@ -372,34 +365,34 @@ def render_stock_tab(df, selected_mandant, selected_artikel, STR):
         show_cartons_only=show_cartons_only,
     )
 
+
     if not history_df.empty:
         # 🔹 Wybór serii na wykresie – zależnie od mandanta
         if str(selected_mandant_stock) == "351":
-            # Dla 351 pokazujemy tylko łączną liczbę palet
             show_total = st.checkbox(
                 "Pokaż łączną liczbę palet",
                 value=True,
-                key="hist_show_total",
+                key=f"{widget_prefix}hist_show_total",
             )
             show_cart = False
             show_other = False
         else:
-            # Dla pozostałych mandantów – pełny wybór
             show_total = st.checkbox(
                 "Pokaż łączną liczbę palet",
                 value=True,
-                key="hist_show_total",
+                key=f"{widget_prefix}hist_show_total",
             )
             show_cart = st.checkbox(
                 "Pokaż kartony",
                 value=True,
-                key="hist_show_cartons",
+                key=f"{widget_prefix}hist_show_cartons",
             )
             show_other = st.checkbox(
                 "Pokaż inne opakowania",
                 value=False,
-                key="hist_show_other",
+                key=f"{widget_prefix}hist_show_other",
             )
+
 
         # Формируем DataFrame для графика
         plot_df = history_df.set_index("DATE").copy()
@@ -417,10 +410,6 @@ def render_stock_tab(df, selected_mandant, selected_artikel, STR):
                 use_container_width=True,
             )
         else:
-            st.info("Zaznacz przynajmniej jedną serię do wyświetlenia na wykresie.")
+            st.info("Zaznacz przynajmniej jedną opcję do wyświetlenia na wykresie.")
     else:
         st.info("Brak danych do zbudowania historii w wybranym zakresie dat.")
-
-    # 7. Предупреждение
-    st.markdown("---")
-    st.markdown(f'<div class="small-note">{STR["stock_warning"]}</div>', unsafe_allow_html=True)

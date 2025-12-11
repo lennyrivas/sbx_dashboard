@@ -103,16 +103,35 @@ def apply_filters(df, mandant, artikel, mode, date_start, date_end):
     )
     
     filtered_df = df[mask].copy()
-    
-    # Определение удаленных палет (PLATZ начинается с WA)
-    filtered_df["IS_DELETED"] = (
-        filtered_df["PLATZ"].fillna("").astype(str)
-        .str.upper().str.startswith("WA")
+
+    # --- Nowa logika usuniętych palet ---
+    # Paleta jest uznana za usuniętą, jeśli:
+    # - ZUSTAND w (460, 451)
+    # - oraz PLATZ zaczyna się na "WA" lub "AB"
+    platz_norm = (
+        filtered_df["PLATZ"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
     )
-    
+
+    zustand_norm = (
+        filtered_df["ZUSTAND"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+    filtered_df["IS_DELETED"] = (
+        (zustand_norm.isin(["460", "451"])) &
+        (platz_norm.str.startswith("WA") | platz_norm.str.startswith("AB"))
+    )
+
     deleted_df = filtered_df[filtered_df["IS_DELETED"]].copy()
-    
+
     return filtered_df, deleted_df
+
 
 def render_debug_info(mandant, artikel, date_field, date_start, date_end, filtered_count):
     """Отображает информацию о фильтрах в sidebar БЕЗ заголовка"""
