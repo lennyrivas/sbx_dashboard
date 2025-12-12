@@ -497,7 +497,19 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
     st.subheader("📋 Lista palet")
     
     if filtered_pallets_df is not None and not filtered_pallets_df.empty:
-        cols_show = ["ARTIKELNR", "ARTBEZ1", "QUANTITY", "LHMNR", "ZUSTAND", "PLATZ", "IN_DATE", "OUT_DATE", "IS_DELETED"]
+        cols_show = [
+            "ARTIKELNR",
+            "ARTBEZ1",
+            "QUANTITY",
+            "LHMNR",
+            "ZUSTAND",
+            "PLATZ",
+            "IN_DATE",
+            "IN_TIME",
+            "OUT_DATE",
+            "OUT_TIME",
+        ]
+
         df_show = filtered_pallets_df[cols_show].sort_values(by="OUT_DATE", ascending=False).reset_index(drop=True)
         
         st.dataframe(df_show, use_container_width=True, hide_index=True)
@@ -540,7 +552,7 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
                 st.info("Brak usuniętych palet dla wybranego artykułu.")
             
             if not selected_artikel:
-                st.info("👈 Wybierz artykuł w filtrach, aby zobaczyć szczegółową tabelę po dniach.")
+                st.info("Wybierz artykuł w filtrach, aby zobaczyć szczegółową tabelę po dniach.")
 
 
     else:

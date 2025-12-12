@@ -104,33 +104,16 @@ def apply_filters(df, mandant, artikel, mode, date_start, date_end):
     
     filtered_df = df[mask].copy()
 
-    # --- Nowa logika usuniętych palet ---
-    # Paleta jest uznana za usuniętą, jeśli:
-    # - ZUSTAND w (460, 451)
-    # - oraz PLATZ zaczyna się na "WA" lub "AB"
-    platz_norm = (
-        filtered_df["PLATZ"]
-        .fillna("")
-        .astype(str)
-        .str.upper()
-        .str.strip()
-    )
-
-    zustand_norm = (
-        filtered_df["ZUSTAND"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
-
-    filtered_df["IS_DELETED"] = (
-        (zustand_norm.isin(["460", "451"])) &
-        (platz_norm.str.startswith("WA") | platz_norm.str.startswith("AB"))
-    )
-
-    deleted_df = filtered_df[filtered_df["IS_DELETED"]].copy()
+    # IS_DELETED уже посчитан при подготовке df (ZUSTAND != 401)
+    # Здесь только выделяем podzbiór usuniętych palet:
+    if "IS_DELETED" in filtered_df.columns:
+        deleted_df = filtered_df[filtered_df["IS_DELETED"]].copy()
+    else:
+        # Fallback: jeśli z jakiegoś powodu kolumny нет
+        deleted_df = filtered_df.iloc[0:0].copy()
 
     return filtered_df, deleted_df
+
 
 
 def render_debug_info(mandant, artikel, date_field, date_start, date_end, filtered_count):

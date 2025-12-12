@@ -145,18 +145,40 @@ def show_main_display(filtered_df, deleted_df, STR):
 
     # ---------- Ряд 4: сами таблицы (ровно по высоте) ----------
 
+
     # Набор колонок зависит от режима
     if current_mode == mode_deleted:
-        # скрыть: MANDANT, ZUSTAND, PLATZ, IS_DELETED, OUT_DATE
+        # Usunięte palety:
+        # показываем даты/время przyjęcia i usunięcia + kto/zmiana
         cols_show_left = [
-            "ARTIKELNR", "ARTBEZ1", "QUANTITY", "LHMNR", "IN_DATE"
+            "ARTIKELNR",
+            "ARTBEZ1",
+            "QUANTITY",
+            "LHMNR",
+            "IN_DATE",
+            "IN_TIME",
+            "OUT_DATE",
+            "OUT_TIME",
+            "CREATED_BY",
+            "CHANGED_DATE",
+            "CHANGED_TIME",
+            "ZUSTAND",
+            "PLATZ",
         ]
     else:
-        # Przyjęte palety: скрыть только MANDANT
+        # Przyjęte palety: без kolumny IS_DELETED
         cols_show_left = [
-            "ARTIKELNR", "ARTBEZ1", "QUANTITY", "LHMNR",
-            "ZUSTAND", "PLATZ", "IN_DATE", "OUT_DATE", "IS_DELETED"
+            "ARTIKELNR",
+            "ARTBEZ1",
+            "QUANTITY",
+            "LHMNR",
+            "PLATZ",
+            "IN_DATE",
+            "IN_TIME",
+            "CREATED_BY",
         ]
+        # OUT_DATE/OUT_TIME при przyjętych можно не показывать, если не нужны
+
 
     with col_left:
         if not df_show_base.empty:
@@ -208,9 +230,22 @@ def show_main_display(filtered_df, deleted_df, STR):
 def render_downloads(deleted_df, summary_df, STR):
     """Только кнопка скачивания Excel-raportu"""
     cols_show = [
-        "MANDANT", "ARTIKELNR", "ARTBEZ1", "QUANTITY", "LHMNR",
-        "ZUSTAND", "PLATZ", "IN_DATE", "OUT_DATE"
+        "MANDANT",
+        "ARTIKELNR",
+        "ARTBEZ1",
+        "QUANTITY",
+        "LHMNR",
+        "ZUSTAND",
+        "PLATZ",
+        "IN_DATE",
+        "IN_TIME",
+        "OUT_DATE",
+        "OUT_TIME",
+        "CREATED_BY",
+        "CHANGED_DATE",
+        "CHANGED_TIME",
     ]
+
 
     try:
         import io

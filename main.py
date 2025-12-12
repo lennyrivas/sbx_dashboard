@@ -126,27 +126,29 @@ def render_analysis_filters(df: pd.DataFrame):
     if selected_artikel:
         mask &= df["ARTIKELNR"].isin([s.strip().upper() for s in selected_artikel])
 
+    # Filtr po dacie (OUT_DATE lub IN_DATE)
     mask &= df[date_field].between(
         pd.Timestamp(date_start),
         pd.Timestamp(date_end),
     )
 
+    # 👉 Dodatkowo: przy Tryb = Wyjście pokazujemy tylko palety usunięte (ZUSTAND != 401)
+    if date_field == "OUT_DATE":
+        # Możesz użyć albo IS_DELETED, albo bezpośrednio ZUSTAND != 401
+        if "IS_DELETED" in df.columns:
+            mask &= df["IS_DELETED"]
+        else:
+            mask &= df["ZUSTAND"].astype(str).str.strip() != "401"
+
     filtered_pallets_df = df[mask].copy()
 
-    # Tu możesz mieć swoją docelową logikę IS_DELETED (ZUSTAND + PLATZ)
-    filtered_pallets_df["IS_DELETED"] = (
-        filtered_pallets_df["PLATZ"]
-        .fillna("")
-        .astype(str)
-        .str.upper()
-        .str.startswith("WA")
-    )
 
-    # Żadnych technicznych komunikatów pod filtrami
+    # Здесь НЕ пересчитываем IS_DELETED – он уже посчитан при загрузке df
+    # и основан на ZUSTAND != 401.
 
-    # Do render_orders_tab:
-    # (lista dostępnych artykułów – weźmiemy z df przefiltrowanego)
+    # Lista dostępnych artykułów po filtrach
     artikel_options = sorted(filtered_pallets_df["ARTIKELNR"].unique().tolist())
+
 
     return (
         selected_mandant,
@@ -199,9 +201,12 @@ except Exception:
         st.error(f"Błąd wczytywania pliku: {e}")
         st.stop()
 
+# Приводим имена колонок к аккуратному виду
+# 1. Заголовки и карта
 df_raw.columns = [c.strip() for c in df_raw.columns]
 cols_map = {c.upper(): c for c in df_raw.columns}
-required = [
+
+required_raw = [
     "MANDANT",
     "ARTIKELNR",
     "ARTBEZ1",
@@ -209,34 +214,68 @@ required = [
     "LHMNR",
     "ZUSTAND",
     "PLATZ",
-    "IN_DATE",
-    "OUT_DATE",
-    "GEANDERT_UM",
     "CHARGE1",
+    "ANGELEGT AM",
+    "ANGELEGT UM",
+    "ANGELEGT VON",
+    "GEANDERT AM",
+    "GEANDERT UM",
+    "BEWEGUNG AM",
+    "BEWEGUNG UM",
 ]
-missing = [r for r in required if r not in cols_map]
+
+missing = [r for r in required_raw if r not in cols_map]
 if missing:
     st.error(f"Plik nie zawiera wymaganych kolumn: {', '.join(missing)}")
     st.stop()
 
-df = df_raw[[cols_map[c] for c in required]].copy()
-df.columns = required
+# 2. Берём нужные колонки из df_raw
+df = df_raw[[cols_map[c] for c in required_raw]].copy()
+df.columns = required_raw  # пока оставляем UPPER/немецкие
 
-# Tylko mandanty 351/352
-df = df[df["MANDANT"].astype(str).isin(["351", "352"])].copy()
+# 3. Переименовываем немецкие поля в программные имена
+df = df.rename(
+    columns={
+        "ANGELEGT AM": "IN_DATE",
+        "ANGELEGT UM": "IN_TIME",
+        "BEWEGUNG AM": "OUT_DATE",
+        "BEWEGUNG UM": "OUT_TIME",
+        "GEANDERT AM": "CHANGED_DATE",
+        "GEANDERT UM": "CHANGED_TIME",
+        "ANGELEGT VON": "CREATED_BY",
+    }
+)
 
-# Normalizacja i typy
+# 4. ТИПЫ
 df["ARTIKELNR"] = df["ARTIKELNR"].astype(str).str.strip().str.upper()
 df["ARTBEZ1"] = df["ARTBEZ1"].astype(str).str.strip()
 df["QUANTITY"] = pd.to_numeric(
     df["QUANTITY"].astype(str).str.replace(",", "."),
     errors="coerce",
 ).fillna(0)
+df["LHMNR"] = df["LHMNR"].astype(str).str.strip()
+df["CHARGE1"] = df["CHARGE1"].fillna("").astype(str).str.strip()
+df["ZUSTAND"] = df["ZUSTAND"].astype(str).str.strip()
+df["PLATZ"] = df["PLATZ"].astype(str).str.strip()
+df["CREATED_BY"] = df["CREATED_BY"].astype(str).str.strip()
+
 df["IN_DATE"] = pd.to_datetime(df["IN_DATE"], dayfirst=True, errors="coerce")
 df["OUT_DATE"] = pd.to_datetime(df["OUT_DATE"], dayfirst=True, errors="coerce")
-df["GEANDERT_UM"] = pd.to_datetime(df["GEANDERT_UM"], dayfirst=True, errors="coerce")
-df["CHARGE1"] = df["CHARGE1"].fillna("").astype(str).str.strip()
-df["LHMNR"] = df["LHMNR"].astype(str).str.strip()
+df["CHANGED_DATE"] = pd.to_datetime(df["CHANGED_DATE"], dayfirst=True, errors="coerce")
+
+df["IN_TIME"] = pd.to_datetime(df["IN_TIME"], format="%H:%M:%S", errors="coerce").dt.time
+df["OUT_TIME"] = pd.to_datetime(df["OUT_TIME"], format="%H:%M:%S", errors="coerce").dt.time
+df["CHANGED_TIME"] = pd.to_datetime(
+    df["CHANGED_TIME"], format="%H:%M:%S", errors="coerce"
+).dt.time
+
+# 5. Логика удаления: ZUSTAND != 401
+df["IS_DELETED"] = df["ZUSTAND"] != "401"
+
+
+# Для паллет с ZUSTAND == 401 поля OUT_DATE/OUT_TIME игнорируются логически.
+# (Физически остаются в df, но при фильтрации удалённых мы будем смотреть только на IS_DELETED)
+
 
 
 # ==============================
