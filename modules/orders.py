@@ -16,6 +16,156 @@ if "orders_cache" not in st.session_state:
         "orders_agg": None,
     }
 
+
+
+# ===== Настройки для распознавания структуры заказов =====
+
+# Якорные артикула (минимальный набор, можно расширять)
+KNOWN_ARTS_SET = {
+    "1",
+    "2",
+    "21",
+    "22",
+    "61",
+    "MH-1875",
+    "MN 5029",
+    "MH-9036",
+    "DAF H-PALETTEN",
+    "8309024074",
+    "8309023044",
+    "0004 MAN",
+    "MH-1872",
+    "8309021164",
+}
+
+# Возможные заголовки для колонки с артикулами
+ARTICLE_HEADER_CANDIDATES = [
+    "NR MATERIALU",
+    "NR MATERIAU",
+    "MATERIALNUMMER",
+    "ARTIKELNR",
+    "ARTIKEL",
+]
+
+def _looks_like_article(value: str) -> bool:
+    """
+    Простая проверка, похоже ли значение на артикул:
+    - не пусто
+    - не чистое '0'
+    - содержит только буквы, цифры, пробелы, тире.
+    """
+    v = str(value).strip()
+    if not v:
+        return False
+    if v == "0":
+        return False
+    import re
+    return bool(re.match(r"^[A-Za-z0-9\- ]+$", v))
+
+
+def detect_order_structure(df_o):
+    """
+    Пытается определить:
+      - индекс колонки с артикулами (art_col)
+      - индекс строки, с которой начинаются данные (data_start_row)
+
+    Логика:
+      1) Сначала ищем строку с заголовками, где есть текст из ARTICLE_HEADER_CANDIDATES.
+      2) Если нашли — art_col = эта колонка, data_start_row = следующая строка.
+      3) Если не нашли — ищем колонку, где:
+           - много значений похожи на артикулы,
+           - встречаются известные артикула из KNOWN_ARTS_SET.
+         В качестве data_start_row берём первую строку, где появляется что-то, похожее на артикул.
+    """
+    max_rows_to_check = min(200, df_o.shape[0])  # ограничиваемся верхней частью таблицы
+
+    # --- Шаг 1: поиск заголовка по ARTICLE_HEADER_CANDIDATES ---
+    art_col_by_header = None
+    header_row_idx = None
+
+    for row_idx in range(max_rows_to_check):
+        row_vals = df_o.iloc[row_idx, :]
+        for col_idx, cell in enumerate(row_vals):
+            text = str(cell).strip().upper()
+            if text in ARTICLE_HEADER_CANDIDATES:
+                art_col_by_header = col_idx
+                header_row_idx = row_idx
+                break
+        if art_col_by_header is not None:
+            break
+
+    if art_col_by_header is not None:
+        # Нашли заголовок колонки артикула
+        art_col = art_col_by_header
+        data_start_row = header_row_idx + 1
+        return {
+            "art_col": art_col,
+            "data_start_row": data_start_row,
+        }
+
+    # --- Шаг 2: без явного заголовка — ищем по содержимому ---
+    best_col = None
+    best_score = -1
+    best_first_row = None
+
+    n_cols = df_o.shape[1]
+
+    for col_idx in range(n_cols):
+        col = df_o.iloc[:max_rows_to_check, col_idx]
+
+        known_hits = 0
+        article_like = 0
+        first_article_row = None
+
+        for row_idx, val in col.items():
+            v = str(val).strip()
+            if not v:
+                continue
+
+            v_upper = v.upper()
+
+            # Якорные артикула
+            if v_upper in KNOWN_ARTS_SET:
+                known_hits += 1
+                if first_article_row is None:
+                    first_article_row = row_idx
+
+            # Похоже на артикул
+            if _looks_like_article(v):
+                article_like += 1
+                if first_article_row is None:
+                    first_article_row = row_idx
+
+        # Оценка колонки:
+        #  - сначала важны совпадения с KNOWN_ARTS_SET
+        #  - затем общее количество "похожих на артикул" значений
+        score = known_hits * 10 + article_like
+
+        if score > best_score and article_like > 0:
+            best_score = score
+            best_col = col_idx
+            best_first_row = first_article_row
+
+    if best_col is None:
+        # Ничего не нашли — вернём дефолт, чтобы не ломать старую логику
+        return {
+            "art_col": 0,
+            "data_start_row": 2,  # как было раньше
+        }
+
+    # Если нашли колонку по содержимому
+    art_col = best_col
+    # Началом данных считаем первую строку, где встретился артикул
+    data_start_row = best_first_row if best_first_row is not None else 2
+
+    return {
+        "art_col": art_col,
+        "data_start_row": data_start_row,
+    }
+
+
+
+
 # ---------- Parsowanie pojedynczego pliku zamówień ----------
 
 def parse_order_file_to_df(fobj):
@@ -164,6 +314,13 @@ def parse_order_file_to_df(fobj):
             rows_padded = [r + [""] * (max_cols - len(r)) for r in rows_data]
             df_o = pd.DataFrame(rows_padded)
 
+             # ===== ОТЛАДКА: покажи первые 5 строк и колонки =====
+        print(f"\n=== ОТЛАДКА ФАЙЛА: {name} ===")
+        print("Первые 5 строк:")
+        print(df_o.head().to_string())
+        print(f"Количество колонок: {df_o.shape[1]}")
+        print("=== КОНЕЦ ОТЛАДКИ ===\n")
+
     except Exception as e:
         print("\n===== ORDER PARSE ERROR (XLSX ZIP/XML) =====", file=sys.stderr)
         traceback.print_exc()
@@ -171,19 +328,141 @@ def parse_order_file_to_df(fobj):
         st.error(f"Błąd czytania pliku zamówienia {name}: {e}")
         return None
 
-    # Проверка структуры
-    if df_o.shape[1] < 4:
-        st.error(f"Plik {name} ma za mało kolumn (oczekiwane >= 4).")
+    # ==== НОВАЯ ЛОГИКА: определяем структуру данных по art_col и data_start_row ====
+    if df_o.shape[1] < 1:
+        st.error(f"Plik {name} ma za mało kolumn (oczekiwane >= 1).")
         return None
 
-    df4 = df_o.iloc[:, :4].copy()
+    structure = detect_order_structure(df_o)
+    art_col = structure["art_col"]
+    data_start_row = structure["data_start_row"]
 
-    if df4.shape[0] <= 2:
-        st.error(f"Plik {name} ma za mało wierszy z danymi.")
+    print(f"[DEBUG] Plik: {name}, art_col={art_col}, data_start_row={data_start_row}")
+
+    # Секция данных: всё, что ниже data_start_row
+    df_data = df_o.iloc[data_start_row:, :].copy()
+
+    # ВЫТАСКИВАЕМ колонку артикула
+    artikel_col = df_data.iloc[:, art_col].astype(str)
+
+    # Кандидаты колонок справа от артикула (максимум 3 справа анализируем)
+    right_cols_indices = []
+    for offset in range(1, 4):
+        idx = art_col + offset
+        if idx < df_data.shape[1]:
+            right_cols_indices.append(idx)
+
+    # Если нет ни одной колонки справа – дальше смысла нет
+    if not right_cols_indices:
+        st.error(f"Plik {name}: brak kolumn z ilościami po kolumnie artykułu.")
         return None
 
-    data = df4.iloc[2:].copy()
-    data.columns = ["ARTIKELNR_RAW", "QTY_RAW", "PALLETS_RAW", "PER_RAW"]
+    # Подготовка: берём подтаблицу с колонками справа
+    right_part = df_data.iloc[:, right_cols_indices].copy()
+
+    # Попробуем классифицировать их грубо:
+    # - PALLETS: целые небольшие числа (обычно 1–32)
+    # - PER: типичные значения из известных PER (10,20,11,1,22,320,27 и т.д.)
+    # - QTY: может быть больше, много нулей и значений > 32
+
+    KNOWN_PER_VALUES = {10, 20, 11, 1, 22, 320, 27}
+
+    pallets_col_idx = None
+    per_col_idx = None
+    qty_col_idx = None
+
+    # Сначала собираем статистику по каждой колонке справа
+    col_stats = {}
+    for idx in right_cols_indices:
+        raw = df_data.iloc[:, idx].astype(str).str.replace(",", ".")
+        col = pd.to_numeric(raw, errors="coerce")
+
+        non_null = col.dropna()
+        if non_null.empty:
+            continue
+
+        max_val = non_null.max()
+        min_val = non_null.min()
+        unique_vals = set(int(v) for v in non_null.unique() if pd.notna(v))
+
+        per_hits = unique_vals.intersection(KNOWN_PER_VALUES)
+        zero_share = (col == 0).sum() / len(col)  # доля нулей
+
+        col_stats[idx] = {
+            "max": max_val,
+            "min": min_val,
+            "unique": unique_vals,
+            "per_hits_count": len(per_hits),
+            "zero_share": zero_share,
+        }
+
+    # 1) Пытаемся выбрать PER по наибольшему числу попаданий в KNOWN_PER_VALUES
+    if col_stats:
+        # колонка с максимальным per_hits_count
+        per_candidate = max(
+            col_stats.items(),
+            key=lambda kv: kv[1]["per_hits_count"],
+        )
+        if per_candidate[1]["per_hits_count"] > 0:
+            per_col_idx = per_candidate[0]
+
+    # 2) Пытаемся выбрать PALLETS среди оставшихся: небольшие значения (<= 32)
+    for idx, stats in col_stats.items():
+        if idx == per_col_idx:
+            continue
+        if stats["max"] <= 32:
+            pallets_col_idx = idx
+            break
+
+    # 3) Всё, что осталось, считаем QTY (общее количество штук)
+    for idx in right_cols_indices:
+        if idx == per_col_idx or idx == pallets_col_idx:
+            continue
+        if idx in col_stats:
+            qty_col_idx = idx
+            break
+
+
+    # Если PER не распознан по известным значениям, но есть 2–3 колонки,
+    # то пытаемся взять крайнюю правую как PER, если там не слишком большие числа.
+    if per_col_idx is None and len(right_cols_indices) >= 2:
+        candidate = right_cols_indices[-1]
+        col = pd.to_numeric(
+            df_data.iloc[:, candidate].astype(str).str.replace(",", "."),
+            errors="coerce",
+        )
+        if col.dropna().max() <= 1000:  # грубый лимит для PER
+            per_col_idx = candidate
+
+    # Теперь формируем сырые колонки ARTIKELNR_RAW, QTY_RAW, PALLETS_RAW, PER_RAW
+    data = pd.DataFrame()
+    data["ARTIKELNR_RAW"] = artikel_col
+
+    # QTY_RAW
+    if qty_col_idx is not None:
+        data["QTY_RAW"] = df_data.iloc[:, qty_col_idx]
+    else:
+        data["QTY_RAW"] = ""
+
+    # PALLETS_RAW
+    if pallets_col_idx is not None:
+        data["PALLETS_RAW"] = df_data.iloc[:, pallets_col_idx]
+    else:
+        data["PALLETS_RAW"] = ""
+
+    # PER_RAW
+    if per_col_idx is not None:
+        data["PER_RAW"] = df_data.iloc[:, per_col_idx]
+    else:
+        data["PER_RAW"] = ""
+
+    # На этом этапе структура data такая же, как раньше:
+    #  ARTIKELNR_RAW, QTY_RAW, PALLETS_RAW, PER_RAW
+    # Остальная логика ниже (нормализация, вычисление ORDER_QTY/ORDER_PALLETS)
+    # остаётся без изменений.
+
+
+
 
     res = pd.DataFrame()
     res["ARTIKELNR"] = data["ARTIKELNR_RAW"].astype(str).str.strip().str.upper()
