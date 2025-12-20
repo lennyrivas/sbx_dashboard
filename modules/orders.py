@@ -345,12 +345,34 @@ def parse_order_file_to_df(fobj):
     # ВЫТАСКИВАЕМ колонку артикула
     artikel_col = df_data.iloc[:, art_col].astype(str)
 
-    # Кандидаты колонок справа от артикула (максимум 3 справа анализируем)
+    # Кандидаты колонок справа от артикуła:
+    # смотрим максимум 5 колонок и сразу отбрасываем явно текстовые.
     right_cols_indices = []
-    for offset in range(1, 4):
+    max_right_span = 5
+
+    for offset in range(1, max_right_span + 1):
         idx = art_col + offset
-        if idx < df_data.shape[1]:
-            right_cols_indices.append(idx)
+        if idx >= df_data.shape[1]:
+            break
+
+        col_raw = df_data.iloc[:, idx].astype(str)
+        # Попытка привести к числу
+        col_num = pd.to_numeric(col_raw.str.replace(",", "."), errors="coerce")
+        non_null = col_num.dropna()
+
+        # Считаем колонку числовой, если хотя бы 3 числовых значения
+        # (и не меньше 5% строк), иначе считаем её текстовой.
+        if len(non_null) < 3 or len(non_null) < 0.05 * len(col_raw):
+            continue
+
+
+        right_cols_indices.append(idx)
+
+    # Если нет ни одной подходящей числовой колонки справа – дальше смысла нет
+    if not right_cols_indices:
+        st.error(f"Plik {name}: brak liczbowych kolumn z ilościami po kolumnie artykułu.")
+        return None
+
 
     # Если нет ни одной колонки справа – дальше смысла нет
     if not right_cols_indices:
