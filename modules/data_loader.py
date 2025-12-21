@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
+@st.cache_data
 def load_main_csv(uploaded_file):
     """
     Загружает CSV файл склада с проверкой колонок и нормализацией данных
@@ -32,21 +33,35 @@ def load_main_csv(uploaded_file):
     df_raw.columns = [c.strip() for c in df_raw.columns]
     cols_map = {c.upper(): c for c in df_raw.columns}
     
-    # Обязательные колонки
-    required = ["MANDANT", "ARTIKELNR", "ARTBEZ1", "QUANTITY", "LHMNR", 
-                "ZUSTAND", "PLATZ", "IN_DATE", "OUT_DATE"]
-    missing = [r for r in required if r not in cols_map]
+    # Обязательные колонки (Немецкие имена из исходного файла)
+    required_raw = [
+        "MANDANT", "ARTIKELNR", "ARTBEZ1", "QUANTITY", "LHMNR", "ZUSTAND",
+        "PLATZ", "CHARGE1", "ANGELEGT AM", "ANGELEGT UM", "ANGELEGT VON",
+        "GEANDERT AM", "GEANDERT UM", "BEWEGUNG AM", "BEWEGUNG UM",
+    ]
+    
+    missing = [r for r in required_raw if r not in cols_map]
     
     if missing:
         st.error(f"Plik nie zawiera wymaganych kolumn: {', '.join(missing)}")
         return None
     
     # Выбираем только нужные колонки и переименовываем
-    df = df_raw[[cols_map[c] for c in required]].copy()
-    df.columns = required
+    df = df_raw[[cols_map[c] for c in required_raw]].copy()
+    df.columns = required_raw
     
-    # Фильтр только mandants 351/352
-    df = df[df["MANDANT"].astype(str).isin(["351", "352"])].copy()
+    # Переименовываем немецкие поля в программные имена
+    df = df.rename(
+        columns={
+            "ANGELEGT AM": "IN_DATE",
+            "ANGELEGT UM": "IN_TIME",
+            "BEWEGUNG AM": "OUT_DATE",
+            "BEWEGUNG UM": "OUT_TIME",
+            "GEANDERT AM": "CHANGED_DATE",
+            "GEANDERT UM": "CHANGED_TIME",
+            "ANGELEGT VON": "CREATED_BY",
+        }
+    )
     
     # Нормализация типов данных
     df["ARTIKELNR"] = df["ARTIKELNR"].astype(str).str.strip().str.upper()
@@ -55,8 +70,24 @@ def load_main_csv(uploaded_file):
         df["QUANTITY"].astype(str).str.replace(',', '.'), 
         errors='coerce'
     ).fillna(0)
+    
+    df["LHMNR"] = df["LHMNR"].astype(str).str.strip()
+    df["CHARGE1"] = df["CHARGE1"].fillna("").astype(str).str.strip()
+    df["ZUSTAND"] = df["ZUSTAND"].astype(str).str.strip()
+    df["PLATZ"] = df["PLATZ"].astype(str).str.strip()
+    df["CREATED_BY"] = df["CREATED_BY"].astype(str).str.strip()
+
     df["IN_DATE"] = pd.to_datetime(df["IN_DATE"], dayfirst=True, errors='coerce')
     df["OUT_DATE"] = pd.to_datetime(df["OUT_DATE"], dayfirst=True, errors='coerce')
-    df["LHMNR"] = df["LHMNR"].astype(str)
+    df["CHANGED_DATE"] = pd.to_datetime(df["CHANGED_DATE"], dayfirst=True, errors="coerce")
+
+    df["IN_TIME"] = pd.to_datetime(df["IN_TIME"], format="%H:%M:%S", errors="coerce").dt.time
+    df["OUT_TIME"] = pd.to_datetime(df["OUT_TIME"], format="%H:%M:%S", errors="coerce").dt.time
+    df["CHANGED_TIME"] = pd.to_datetime(
+        df["CHANGED_TIME"], format="%H:%M:%S", errors="coerce"
+    ).dt.time
+
+    # Логика удаления: ZUSTAND != 401
+    df["IS_DELETED"] = df["ZUSTAND"] != "401"
     
     return df

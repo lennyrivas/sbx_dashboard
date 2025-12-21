@@ -116,6 +116,7 @@ def aggregate_stock_df(df_stock):
     return df_agg.sort_values("Ilość palet", ascending=False)
 
 
+@st.cache_data
 def build_stock_history(
     df: pd.DataFrame,
     selected_mandant: str,

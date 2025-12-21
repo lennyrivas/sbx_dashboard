@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from pathlib import Path
-import sys
 
 from modules.orders import render_orders_tab
 from modules.ui_strings import STR
@@ -16,10 +14,7 @@ from utils import (
 from modules.settings import render_settings_tab
 from modules.stock import render_stock_tab
 from modules.stats import render_stats_tab
-
-# Чтобы можно было импортировать из папки modules
-sys.path.append(str(Path(__file__).parent / "modules"))
-
+from modules.data_loader import load_main_csv
 
 # ==============================
 # Функция фильтров для вкладки Analiza
@@ -161,8 +156,6 @@ def render_analysis_filters(df: pd.DataFrame):
     )
 
 
-
-
 # ==============================
 # Основная конфигурация страницы
 # ==============================
@@ -188,162 +181,9 @@ if uploaded is None:
     st.info(STR["no_file"])
     st.stop()
 
-try:
-    if uploaded.name.lower().endswith(".csv") or uploaded.name.lower().endswith(".txt"):
-        df_raw = pd.read_csv(uploaded, sep=";", dtype=str, encoding="utf-8")
-    else:
-        df_raw = pd.read_csv(uploaded, sep=";", dtype=str, encoding="utf-8")
-except Exception:
-    try:
-        uploaded.seek(0)
-        df_raw = pd.read_csv(uploaded, sep=";", dtype=str, encoding="latin-1")
-    except Exception as e:
-        st.error(f"Błąd wczytywania pliku: {e}")
-        st.stop()
-
-# Приводим имена колонок к аккуратному виду
-# 1. Заголовки и карта
-df_raw.columns = [c.strip() for c in df_raw.columns]
-cols_map = {c.upper(): c for c in df_raw.columns}
-
-required_raw = [
-    "MANDANT",
-    "ARTIKELNR",
-    "ARTBEZ1",
-    "QUANTITY",
-    "LHMNR",
-    "ZUSTAND",
-    "PLATZ",
-    "CHARGE1",
-    "ANGELEGT AM",
-    "ANGELEGT UM",
-    "ANGELEGT VON",
-    "GEANDERT AM",
-    "GEANDERT UM",
-    "BEWEGUNG AM",
-    "BEWEGUNG UM",
-]
-
-missing = [r for r in required_raw if r not in cols_map]
-if missing:
-    st.error(f"Plik nie zawiera wymaganych kolumn: {', '.join(missing)}")
+df = load_main_csv(uploaded)
+if df is None:
     st.stop()
-
-# 2. Берём нужные колонки из df_raw
-df = df_raw[[cols_map[c] for c in required_raw]].copy()
-df.columns = required_raw  # пока оставляем UPPER/немецкие
-
-# 3. Переименовываем немецкие поля в программные имена
-df = df.rename(
-    columns={
-        "ANGELEGT AM": "IN_DATE",
-        "ANGELEGT UM": "IN_TIME",
-        "BEWEGUNG AM": "OUT_DATE",
-        "BEWEGUNG UM": "OUT_TIME",
-        "GEANDERT AM": "CHANGED_DATE",
-        "GEANDERT UM": "CHANGED_TIME",
-        "ANGELEGT VON": "CREATED_BY",
-    }
-)
-
-# 4. ТИПЫ
-df["ARTIKELNR"] = df["ARTIKELNR"].astype(str).str.strip().str.upper()
-df["ARTBEZ1"] = df["ARTBEZ1"].astype(str).str.strip()
-df["QUANTITY"] = pd.to_numeric(
-    df["QUANTITY"].astype(str).str.replace(",", "."),
-    errors="coerce",
-).fillna(0)
-df["LHMNR"] = df["LHMNR"].astype(str).str.strip()
-df["CHARGE1"] = df["CHARGE1"].fillna("").astype(str).str.strip()
-df["ZUSTAND"] = df["ZUSTAND"].astype(str).str.strip()
-df["PLATZ"] = df["PLATZ"].astype(str).str.strip()
-df["CREATED_BY"] = df["CREATED_BY"].astype(str).str.strip()
-
-df["IN_DATE"] = pd.to_datetime(df["IN_DATE"], dayfirst=True, errors="coerce")
-df["OUT_DATE"] = pd.to_datetime(df["OUT_DATE"], dayfirst=True, errors="coerce")
-df["CHANGED_DATE"] = pd.to_datetime(df["CHANGED_DATE"], dayfirst=True, errors="coerce")
-
-df["IN_TIME"] = pd.to_datetime(df["IN_TIME"], format="%H:%M:%S", errors="coerce").dt.time
-df["OUT_TIME"] = pd.to_datetime(df["OUT_TIME"], format="%H:%M:%S", errors="coerce").dt.time
-df["CHANGED_TIME"] = pd.to_datetime(
-    df["CHANGED_TIME"], format="%H:%M:%S", errors="coerce"
-).dt.time
-
-# 5. Логика удаления: ZUSTAND != 401
-df["IS_DELETED"] = df["ZUSTAND"] != "401"
-
-
-# Для паллет с ZUSTAND == 401 поля OUT_DATE/OUT_TIME игнорируются логически.
-# (Физически остаются в df, но при фильтрации удалённых мы будем смотреть только на IS_DELETED)
-
-
-
-# ==============================
-# Локальная функция настроек (как у тебя было)
-# ==============================
-def render_local_settings_tab():
-    """Расширенные настройки исключений + упаковка"""
-    st.header("⚙️ Ustawienia")
-
-    # 1. Исключения артикулов
-    st.subheader("1. Artykuły wykluczone z porównań")
-    exact_list, prefix_list = load_excluded_articles()
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("**Artykuły dokładne**")
-        exact_input = st.text_area(
-            label="Artykuły dokładne",
-            value="\n".join(exact_list),
-            height=150,
-            key="exact_input",
-        )
-    with col2:
-        st.markdown("**Prefiksy**")
-        prefix_input = st.text_area(
-            label="Prefiksy artykułów",
-            value="\n".join(prefix_list),
-            height=150,
-            key="prefix_input",
-        )
-
-    # 2. Конфигурация упаковки
-    st.subheader("2. Konfiguracja opakowań (Mandant 352)")
-    kartony_prefixes, other_prefixes = load_packaging_config()
-
-    col3, col4 = st.columns(2)
-    with col3:
-        st.markdown("**Prefiksy kartonów**")
-        kartony_input = st.text_area(
-            label="Prefiksy kartonów",
-            value="\n".join(kartony_prefixes),
-            height=150,
-            key="kartony_input",
-        )
-    with col4:
-        st.markdown("**Inne opakowania**")
-        other_input = st.text_area(
-            label="Inne opakowania",
-            value="\n".join(other_prefixes),
-            height=150,
-            key="other_input",
-        )
-
-    col_save1, col_save2, _ = st.columns(3)
-    with col_save1:
-        if st.button("💾 Zapisz wyjątki", type="secondary"):
-            new_exact = [x.strip() for x in exact_input.splitlines() if x.strip()]
-            new_prefix = [x.strip() for x in prefix_input.splitlines() if x.strip()]
-            if save_excluded_articles(new_exact, new_prefix):
-                st.success("✅ Wyjątki zapisane pomyślnie")
-
-    with col_save2:
-        if st.button("📦 Zapisz opakowania", type="primary"):
-            new_kartony = [x.strip() for x in kartony_input.splitlines() if x.strip()]
-            new_other = [x.strip() for x in other_input.splitlines() if x.strip()]
-            if save_packaging_config(new_kartony, new_other):
-                st.success("✅ Konfiguracja opakowań zapisana pomyślnie")
-
 
 # ==============================
 # Вкладки
@@ -400,7 +240,6 @@ with tab_analysis:
         selected_artikel,
     )
 
-
 with tab_stock:
     render_stock_tab(
         df,                # полный очищенный DataFrame
@@ -413,7 +252,5 @@ with tab_stats:
     render_stats_tab(df, STR)
 
 with tab_settings:
-    # Можно использовать либо render_settings_tab из modules.settings,
-    # либо локальную реализацию выше; выбирай один вариант:
-    # render_settings_tab(df, STR)  # если такая сигнатура есть
-    render_local_settings_tab()
+    # Используем функцию из модуля
+    render_settings_tab()

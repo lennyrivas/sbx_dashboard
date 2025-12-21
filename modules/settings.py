@@ -3,6 +3,12 @@
 
 import streamlit as st
 from modules.ui_strings import STR
+from utils import (
+    load_excluded_articles,
+    save_excluded_articles,
+    load_packaging_config,
+    save_packaging_config,
+)
 
 def init_settings():
     """Инициализация настроек по умолчанию"""
@@ -20,60 +26,64 @@ def init_settings():
     return defaults
 
 def render_settings_tab():
-    """Вкладка настроек"""
-    st.header(STR["settings"])
-    
-    # 3 колонки для каждого типа
-    col1, col2, col3 = st.columns(3)
-    
+    """Расширенные настройки исключений + упаковка"""
+    st.header("⚙️ Ustawienia")
+
+    # 1. Исключения артикулов
+    st.subheader("1. Artykuły wykluczone z porównań")
+    exact_list, prefix_list = load_excluded_articles()
+
+    col1, col2 = st.columns(2)
     with col1:
-        st.subheader(STR["settings_cartons"])
-        edit_cartons(st.session_state.cartons)
-    
+        st.markdown("**Artykuły dokładne**")
+        exact_input = st.text_area(
+            label="Artykuły dokładne",
+            value="\n".join(exact_list),
+            height=150,
+            key="exact_input",
+        )
     with col2:
-        st.subheader(STR["settings_pallets"])
-        edit_pallets_frames(st.session_state.pallets_frames)
-    
+        st.markdown("**Prefiksy**")
+        prefix_input = st.text_area(
+            label="Prefiksy artykułów",
+            value="\n".join(prefix_list),
+            height=150,
+            key="prefix_input",
+        )
+
+    # 2. Конфигурация упаковки
+    st.subheader("2. Konfiguracja opakowań (Mandant 352)")
+    kartony_prefixes, other_prefixes = load_packaging_config()
+
+    col3, col4 = st.columns(2)
     with col3:
-        st.subheader(STR["settings_other"])
-        edit_other(st.session_state.other_packaging)
+        st.markdown("**Prefiksy kartonów**")
+        kartony_input = st.text_area(
+            label="Prefiksy kartonów",
+            value="\n".join(kartony_prefixes),
+            height=150,
+            key="kartony_input",
+        )
+    with col4:
+        st.markdown("**Inne opakowania**")
+        other_input = st.text_area(
+            label="Inne opakowania",
+            value="\n".join(other_prefixes),
+            height=150,
+            key="other_input",
+        )
 
-def edit_cartons(carton_list):
-    """Редактирование списка картонов"""
-    edit_list("cartons", carton_list, "Dodaj prefix kartonu")
+    col_save1, col_save2, _ = st.columns(3)
+    with col_save1:
+        if st.button("💾 Zapisz wyjątki", type="secondary"):
+            new_exact = [x.strip() for x in exact_input.splitlines() if x.strip()]
+            new_prefix = [x.strip() for x in prefix_input.splitlines() if x.strip()]
+            if save_excluded_articles(new_exact, new_prefix):
+                st.success("✅ Wyjątki zapisane pomyślnie")
 
-def edit_pallets_frames(pallet_list):
-    """Редактирование списка палет/рам"""
-    edit_list("pallets_frames", pallet_list, "Dodaj prefix palety/ramy")
-
-def edit_other(other_list):
-    """Редактирование списка других упаковок"""
-    edit_list("other_packaging", other_list, "Dodaj prefix innego")
-
-def edit_list(list_key, current_list, placeholder):
-    """Универсальный редактор списка"""
-    
-    # Поле ввода нового префикса
-    new_item = st.text_input(
-        placeholder, 
-        placeholder=placeholder,
-        key=f"new_{list_key}"
-    )
-    
-    if st.button(STR["add_prefix"], key=f"add_{list_key}"):
-        if new_item.strip():
-            current_list.append(new_item.strip().upper())
-            st.session_state[list_key] = current_list.copy()
-            st.rerun()
-    
-    # Текущий список с возможностью удаления
-    st.markdown("**Aktualna lista:**")
-    for i, item in enumerate(current_list):
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.code(item)
-        with col2:
-            if st.button(f"🗑️", key=f"del_{list_key}_{i}"):
-                current_list.pop(i)
-                st.session_state[list_key] = current_list.copy()
-                st.rerun()
+    with col_save2:
+        if st.button("📦 Zapisz opakowania", type="primary"):
+            new_kartony = [x.strip() for x in kartony_input.splitlines() if x.strip()]
+            new_other = [x.strip() for x in other_input.splitlines() if x.strip()]
+            if save_packaging_config(new_kartony, new_other):
+                st.success("✅ Konfiguracja opakowań zapisana pomyślnie")
