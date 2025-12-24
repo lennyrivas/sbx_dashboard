@@ -10,7 +10,7 @@ from utils import load_packaging_config
 
 # --- Логика фильтрации ---
 
-def filter_stock_df(df, selected_mandant, selected_artikel, selected_date):
+def filter_stock_df(df, selected_mandant, selected_artikel, selected_date, debug=False):
     """
     ✅ СТРОГАЯ ФИЛЬТРАЦИЯ складских остатков на начало дня
     Логика: IN_DATE < дата И (OUT_DATE пустой ИЛИ OUT_DATE >= дата)
@@ -19,57 +19,59 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date):
     if df is None or df.empty:
         return pd.DataFrame()
     
+    if debug:
+        st.markdown(f"### 🐞 DEBUG: Analiza na dzień {selected_date.strftime('%d.%m.%Y')}")
+        st.info(f"**START**: Całkowita liczba wierszy w pliku: {len(df)}")
 
     # 🎯 ШАГ 1: Базовый фильтр mandant
     df_filtered = df[df["MANDANT"].astype(str) == selected_mandant].copy()
-
-    # 🎯 ШАГ 1.5: ✅ ФИЛЬТР ZUSTAND (только паллеты НА СКЛАДЕ)
-    zustand_stock = ["401", "460"]
-    df_filtered = df_filtered[
-        df_filtered["ZUSTAND"].astype(str).isin(zustand_stock)
-    ].copy()
-
-    # 🎯 ШАГ 1.7: ✅ ФИЛЬТР PLATZ (НАЧИНАЕТСЯ с BL*, WE*, WA01*, 02*, 2*)
-    platz_prefixes = ["BL", "WE", "WA", "02", "2"]
-    df_filtered["PLATZ_UPPER"] = df_filtered["PLATZ"].fillna("").astype(str).str.upper()
-
-    # Создаём маску: PLATZ начинается с любого из префиксов
-    mask_platz = False
-    for prefix in platz_prefixes:
-        mask_platz |= df_filtered["PLATZ_UPPER"].str.startswith(prefix)
-
-    df_filtered = df_filtered[mask_platz].copy()
-    df_filtered = df_filtered.drop("PLATZ_UPPER", axis=1)
     
+    if debug:
+        st.write(f"1️⃣ **Filtr Mandant ({selected_mandant})**: {len(df_filtered)} wierszy")
+
     # 🎯 ШАГ 2: СТРОГАЯ ФИЛЬТРАЦИЯ ПО ДАТЕ
-    # IN_DATE < дата (принята ДО начала дня)
+    # 1. IN_DATE < дата (Strictly less: принята ДО начала дня 00:00)
     mask_in = df_filtered["IN_DATE"].dt.date < selected_date.date()
     
-    # OUT_DATE пустой ИЛИ >= дата (не удалена К началу дня)
-    mask_out = (
-        df_filtered["OUT_DATE"].isnull() | 
-        (df_filtered["OUT_DATE"].dt.date >= selected_date.date())
-    )
+    # 2. Логика присутствия (mask_out)
+    # Пользователь: "Статус на складе = zustand 401. Если Zustand отличается, значит паллеты уже нет."
+    # "Если zustand != 401, то дата удаления вписана в ячейке Bewegung am (OUT_DATE)."
     
-    df_stock_raw = df_filtered[mask_in & mask_out].copy()
-
-    # 🔍 Диагностика: сколько PID имеют >1 записи после фильтра по дате
-    dup_lhmnr = df_stock_raw["LHMNR"].value_counts()
-    multi_lhmnr_count = (dup_lhmnr > 1).sum()
-
-
-
+    # A) Паллета имеет статус 401 (она на складе). OUT_DATE игнорируем (это дата движения).
+    mask_is_401 = df_filtered["ZUSTAND"].astype(str) == "401"
     
+    # B) Паллета имеет другой статус (удалена), НО дата удаления >= selected_date.
+    mask_removed_later = df_filtered["OUT_DATE"].dt.date >= selected_date.date()
+    
+    mask_out_logic = mask_is_401 | mask_removed_later
+    
+    df_stock_raw = df_filtered[mask_in & mask_out_logic].copy()
+    
+    if debug:
+        st.write(f"2️⃣ **Filtr Daty**: {len(df_stock_raw)} wierszy")
+        st.caption(f"Warunek: IN_DATE < {selected_date.date()} ORAZ (ZUSTAND == 401 LUB OUT_DATE >= {selected_date.date()})")
+        
+        dropped = df_filtered[~(mask_in & mask_out_logic)]
+        if not dropped.empty:
+            with st.expander("❌ Przykłady odrzuconych wierszy (krok 2)"):
+                st.dataframe(dropped[["LHMNR", "IN_DATE", "OUT_DATE", "ZUSTAND"]].head(10))
+
     # 🎯 ШАГ 3: ✅ ДЕДУПЛИКАЦИЯ ПО LHMNR (каждый PID только 1 раз!)
     # Берем САМУЮ ПОЗДНЮЮ запись для каждого PID
     df_stock = df_stock_raw.sort_values("IN_DATE", ascending=False).drop_duplicates(
         subset=["LHMNR"], keep="first"
     )
     
+    if debug:
+        st.write(f"3️⃣ **Deduplikacja LHMNR**: {len(df_stock)} wierszy")
+        st.caption("Zostawiamy tylko najnowszy wpis (wg IN_DATE) dla każdego LHMNR.")
+
     # 🎯 ШАГ 4: Фильтр артикулов (после дедупликации)
     if selected_artikel:
         artikel_list = [a.strip().upper() for a in selected_artikel]
         df_stock = df_stock[df_stock["ARTIKELNR"].isin(artikel_list)].copy()
+        if debug:
+            st.write(f"4️⃣ **Filtr Artykułów**: {len(df_stock)} wierszy")
 
     
     # 🎯 ШАГ 5: Классификация упаковки
@@ -258,6 +260,9 @@ def render_stock_tab(df, selected_mandant, selected_artikel, STR):
             key="stock_cartons_only_new"
         )
 
+    # Checkbox for debug
+    debug_mode = st.checkbox("🐞 Tryb debugowania (pokaż szczegóły filtracji)", value=False)
+
     st.markdown("---")
 
     # ✅ Теперь используем НАШИ локальные фильтры
@@ -265,7 +270,8 @@ def render_stock_tab(df, selected_mandant, selected_artikel, STR):
         df,                          # полный df
         selected_mandant_stock,      # 👉 наш mandant
         selected_artikel_stock,      # 👉 наши статьи  
-        selected_date_stock          # 👉 наша дата
+        selected_date_stock,         # 👉 наша дата
+        debug=debug_mode             # 👉 debug
     )
 
     if df_stock.empty:
@@ -306,7 +312,13 @@ def render_stock_tab(df, selected_mandant, selected_artikel, STR):
             "PLATZ": "Miejsce",
             "CHARGE1": "Dodatkowy opis",
             "IN_DATE": "IN_DATE",
-            "Opakowanie": "Opakowanie"
+            "IN_TIME": "IN_TIME",
+            "OUT_DATE": "OUT_DATE",
+            "OUT_TIME": "OUT_TIME",
+            "CREATED_BY": "CREATED_BY",
+            "CHANGED_DATE": "CHANGED_DATE",
+            "CHANGED_TIME": "CHANGED_TIME",
+            "ZUSTAND": "ZUSTAND",
         }
         
         # Выбираем и переименовываем колонки для отображения
