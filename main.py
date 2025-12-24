@@ -28,10 +28,19 @@ def render_analysis_filters(df: pd.DataFrame):
 
     st.subheader("🔍 Filtry analizy")
     
+    # Generowanie opcji czasu (co 1h od 6:00 do 22:00)
+    time_options = [""]
+    t_curr = datetime(2000, 1, 1, 6, 0)
+    t_end_limit = datetime(2000, 1, 1, 22, 0)
+    while t_curr < t_end_limit:
+        t_next = t_curr + timedelta(hours=1)
+        label = f"{t_curr.strftime('%H:%M')} - {t_next.strftime('%H:%M')}"
+        time_options.append(label)
+        t_curr = t_next
 
-    # Jedna linia: Mandant | Tryb | Daty (tryb + od + do) | Artykuł
-    col_mandant, col_mode, col_dates, col_artikel = st.columns(
-        [0.4, 1.4, 3.2, 1.6]  # ostatnią kolumnę trochę skracamy względem poprzedniej wersji
+    # Jedna linia: Mandant | Tryb | Daty (tryb + od + do) | Czas | Artykuł
+    col_mandant, col_mode, col_dates, col_time, col_artikel = st.columns(
+        [0.4, 1.2, 2.8, 1.0, 1.4]
     )
 
     yesterday = (datetime.now() - timedelta(days=1)).date()
@@ -100,6 +109,15 @@ def render_analysis_filters(df: pd.DataFrame):
             date_start = datetime.combine(start, datetime.min.time())
             date_end = datetime.combine(end, datetime.max.time())
 
+    # Czas (1h)
+    with col_time:
+        selected_time_range = st.selectbox(
+            "Czas (1h)",
+            options=time_options,
+            index=0,
+            key="analysis_time_range",
+        )
+
     # Artykuł – z powrotem multiselect, ale w nieco węższej kolumnie
     with col_artikel:
         artikel_options = sorted(
@@ -126,6 +144,21 @@ def render_analysis_filters(df: pd.DataFrame):
         pd.Timestamp(date_start),
         pd.Timestamp(date_end),
     )
+
+    # Filtr czasu (IN_TIME lub OUT_TIME)
+    if selected_time_range:
+        t_start_str, t_end_str = selected_time_range.split(" - ")
+        t_start = datetime.strptime(t_start_str, "%H:%M").time()
+        t_end = datetime.strptime(t_end_str, "%H:%M").time()
+        
+        time_col = "OUT_TIME" if date_field == "OUT_DATE" else "IN_TIME"
+        
+        def filter_time_range(val):
+            if val is None or pd.isna(val):
+                return False
+            return t_start <= val < t_end
+            
+        mask &= df[time_col].apply(filter_time_range)
 
     # 👉 Dodatkowo: przy Tryb = Wyjście pokazujemy tylko palety usunięte (ZUSTAND != 401)
     if date_field == "OUT_DATE":
