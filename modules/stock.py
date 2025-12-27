@@ -2,11 +2,14 @@
 
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta # timedelta для yesterday
+from datetime import datetime, timedelta
 import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
 from modules.ui_strings import STR
 from modules.display_main import classify_pallet 
 from utils import load_packaging_config
+
 
 # --- Логика фильтрации ---
 
@@ -21,7 +24,7 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date, debug
     
     if debug:
         st.markdown(f"### 🐞 DEBUG: Analiza na dzień {selected_date.strftime('%d.%m.%Y')}")
-        st.info(f"**START**: Całkowita liczba wierszy w pliku: {len(df)}")
+        st.info(f"**START**: Całkowita liczba wierszy в pliku: {len(df)}")
 
     # 🎯 ШАГ 1: Базовый фильтр mandant
     df_filtered = df[df["MANDANT"].astype(str) == selected_mandant].copy()
@@ -30,17 +33,10 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date, debug
         st.write(f"1️⃣ **Filtr Mandant ({selected_mandant})**: {len(df_filtered)} wierszy")
 
     # 🎯 ШАГ 2: СТРОГАЯ ФИЛЬТРАЦИЯ ПО ДАТЕ
-    # 1. IN_DATE < дата (Strictly less: принята ДО начала дня 00:00)
     mask_in = df_filtered["IN_DATE"].dt.date < selected_date.date()
     
-    # 2. Логика присутствия (mask_out)
-    # Пользователь: "Статус на складе = zustand 401. Если Zustand отличается, значит паллеты уже нет."
-    # "Если zustand != 401, то дата удаления вписана в ячейке Bewegung am (OUT_DATE)."
-    
-    # A) Паллета имеет статус 401 (она на складе). OUT_DATE игнорируем (это дата движения).
+    # Статус 401 (на складе) или удалена позже выбранной даты
     mask_is_401 = df_filtered["ZUSTAND"].astype(str) == "401"
-    
-    # B) Паллета имеет другой статус (удалена), НО дата удаления >= selected_date.
     mask_removed_later = df_filtered["OUT_DATE"].dt.date >= selected_date.date()
     
     mask_out_logic = mask_is_401 | mask_removed_later
@@ -49,31 +45,17 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date, debug
     
     if debug:
         st.write(f"2️⃣ **Filtr Daty**: {len(df_stock_raw)} wierszy")
-        st.caption(f"Warunek: IN_DATE < {selected_date.date()} ORAZ (ZUSTAND == 401 LUB OUT_DATE >= {selected_date.date()})")
         
-        dropped = df_filtered[~(mask_in & mask_out_logic)]
-        if not dropped.empty:
-            with st.expander("❌ Przykłady odrzuconych wierszy (krok 2)"):
-                st.dataframe(dropped[["LHMNR", "IN_DATE", "OUT_DATE", "ZUSTAND"]].head(10))
-
-    # 🎯 ШАГ 3: ✅ ДЕДУПЛИКАЦИЯ ПО LHMNR (каждый PID только 1 раз!)
-    # Берем САМУЮ ПОЗДНЮЮ запись для каждого PID
+    # 🎯 ШАГ 3: ДЕДУПЛИКАЦИЯ ПО LHMNR
     df_stock = df_stock_raw.sort_values("IN_DATE", ascending=False).drop_duplicates(
         subset=["LHMNR"], keep="first"
     )
     
-    if debug:
-        st.write(f"3️⃣ **Deduplikacja LHMNR**: {len(df_stock)} wierszy")
-        st.caption("Zostawiamy tylko najnowszy wpis (wg IN_DATE) dla każdego LHMNR.")
-
-    # 🎯 ШАГ 4: Фильтр артикулов (после дедупликации)
+    # 🎯 ШАГ 4: Фильтр артикулов
     if selected_artikel:
         artikel_list = [a.strip().upper() for a in selected_artikel]
         df_stock = df_stock[df_stock["ARTIKELNR"].isin(artikel_list)].copy()
-        if debug:
-            st.write(f"4️⃣ **Filtr Artykułów**: {len(df_stock)} wierszy")
 
-    
     # 🎯 ШАГ 5: Классификация упаковки
     kartony_prefixes, other_packaging_prefixes = load_packaging_config()
     pallets_frames_prefixes = st.session_state.get("pallets_frames", [])
@@ -94,9 +76,6 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date, debug
 # --- Логика агрегации ---
 
 def aggregate_stock_df(df_stock):
-    """
-    Группировка по артикулу, описанию и типу упаковки, подсчет паллет/штук.
-    """
     if df_stock.empty:
         return pd.DataFrame()
         
@@ -105,16 +84,7 @@ def aggregate_stock_df(df_stock):
         Ilość_sztuk=("QUANTITY", "sum")
     ).reset_index()
 
-    # Переименование для финальной таблицы
-    df_agg.columns = [
-        "Artykuł", 
-        "Opis artykułu", 
-        "Opakowanie",
-        "Ilość palet", 
-        "Ilość sztuk"
-    ]
-    
-    # Сортировка по количеству паллет
+    df_agg.columns = ["Artykuł", "Opis artykułu", "Opakowanie", "Ilość palet", "Ilość sztuk"]
     return df_agg.sort_values("Ilość palet", ascending=False)
 
 
@@ -127,29 +97,12 @@ def build_stock_history(
     end_date: datetime,
     show_cartons_only: bool = False,
 ) -> pd.DataFrame:
-    """
-    Строит историю количества палет на складе по дням.
-
-    На каждый день в диапазоне [start_date, end_date] применяет
-    уже существующую логику filter_stock_df и считает:
-    - общее количество палет
-    - количество картонных палет
-    - количество прочих палет
-
-    Возвращает DataFrame с колонками:
-    - DATE
-    - TOTAL_PALLETS
-    - CARTONS
-    - OTHER
-    """
     if df is None or df.empty:
         return pd.DataFrame()
 
-    # Нормализуем даты (обнуляем время)
     start_date = datetime.combine(start_date.date(), datetime.min.time())
     end_date = datetime.combine(end_date.date(), datetime.min.time())
 
-    # На всякий случай гарантируем, что start_date <= end_date
     if start_date > end_date:
         start_date, end_date = end_date, start_date
 
@@ -158,8 +111,6 @@ def build_stock_history(
 
     for offset in range(days):
         current_date = start_date + timedelta(days=offset)
-
-        # Используем твою готовую функцию фильтрации
         df_day = filter_stock_df(
             df=df,
             selected_mandant=selected_mandant,
@@ -181,194 +132,83 @@ def build_stock_history(
             cartons_count = df_for_count[df_for_count["Opakowanie"] == "Kartony"].shape[0]
             other_count = df_for_count[df_for_count["Opakowanie"] != "Kartony"].shape[0]
 
-        history_rows.append(
-            {
-                "DATE": current_date.date(),
-                "TOTAL_PALLETS": total_pallets,
-                "CARTONS": cartons_count,
-                "OTHER": other_count,
-            }
-        )
+        history_rows.append({
+            "DATE": current_date.date(),
+            "TOTAL_PALLETS": total_pallets,
+            "CARTONS": cartons_count,
+            "OTHER": other_count,
+        })
 
-    history_df = pd.DataFrame(history_rows)
-    return history_df
-
-
-
+    return pd.DataFrame(history_rows)
 
 
 # --- Рендеринг вкладки ---
 
 def render_stock_tab(df, selected_mandant, selected_artikel, STR):
-
-    
-    """
-    Основная функция рендеринга вкладки Stany magazynowe.
-    """
     st.header(STR["stock_tab"])
-
-    # =======================
-    # 👉 НОВЫЕ НЕЗАВИСИМЫЕ ФИЛЬТРЫ ДЛЯ СКЛАДА
-    # =======================
     st.markdown("---")
     st.subheader("🔍 Filtry dla stanów magazynowych")
 
-    # Создаём 3 колонки для фильтров склада
     col_stock_mandant, col_stock_date, col_stock_artikel = st.columns([1, 1.5, 2])
 
-    # 1. Mandant (независимый от sidebar)
     with col_stock_mandant:
         available_mandants_stock = sorted(df["MANDANT"].astype(str).unique())
-        selected_mandant_stock = st.selectbox(
-            "Mandant", 
-            options=available_mandants_stock, 
-            index=0,
-            key="stock_mandant_filter"
-        )
+        selected_mandant_stock = st.selectbox("Mandant", options=available_mandants_stock, index=0, key="stock_mandant_filter")
 
-    # 2. Только дата (убрали zakres dat)
     with col_stock_date:
         yesterday = (datetime.now() - timedelta(days=1)).date()
-        stock_date = st.date_input(
-            "Data sprawdzenia stanów", 
-            value=yesterday,
-            max_value=datetime.now().date(),
-            key="stock_date_only"
-        )
+        stock_date = st.date_input("Data sprawdzenia stanów", value=yesterday, max_value=datetime.now().date(), key="stock_date_only")
         selected_date_stock = datetime.combine(stock_date, datetime.min.time())
 
-    # 3. Artikel фильтр (независимый)
     with col_stock_artikel:
-        # Только статьи для выбранного mandant
-        artikel_stock_options = sorted(
-            df[df["MANDANT"].astype(str) == selected_mandant_stock]["ARTIKELNR"]
-            .dropna().unique().tolist()
-        )
-        selected_artikel_stock = st.multiselect(
-            "Artykuły", 
-            options=artikel_stock_options,
-            default=[],
-            key="stock_artikel_filter"
-        )
+        artikel_stock_options = sorted(df[df["MANDANT"].astype(str) == selected_mandant_stock]["ARTIKELNR"].dropna().unique().tolist())
+        selected_artikel_stock = st.multiselect("Artykuły", options=artikel_stock_options, default=[], key="stock_artikel_filter")
 
-# Чекбокс "tylko kartony" – tylko dla mandanta != 351
     if str(selected_mandant_stock) == "351":
         show_cartons_only = False
     else:
-        show_cartons_only = st.checkbox(
-            "📦 Pokaż tylko kartony",
-            key="stock_cartons_only_new"
-        )
+        show_cartons_only = st.checkbox("📦 Pokaż tylko kartony", key="stock_cartons_only_new")
 
-    # Checkbox for debug
     debug_mode = st.checkbox("🐞 Tryb debugowania (pokaż szczegóły filtracji)", value=False)
-
     st.markdown("---")
 
-    # ✅ Теперь используем НАШИ локальные фильтры
-    df_stock = filter_stock_df(
-        df,                          # полный df
-        selected_mandant_stock,      # 👉 наш mandant
-        selected_artikel_stock,      # 👉 наши статьи  
-        selected_date_stock,         # 👉 наша дата
-        debug=debug_mode             # 👉 debug
-    )
+    df_stock = filter_stock_df(df, selected_mandant_stock, selected_artikel_stock, selected_date_stock, debug=debug_mode)
 
     if df_stock.empty:
-        st.warning(f"Brak palet na magazynie zgodnie z filtrem Mandant={selected_mandant_stock}, Artykuł={selected_artikel_stock if selected_artikel_stock else 'Wszystkie'} i datą {selected_date_stock.strftime('%d.%m.%Y')}.")
+        st.warning(f"Brak palet na magazynie.")
         return
 
-    # Применение фильтра "только картоны"
     if show_cartons_only:
         df_stock = df_stock[df_stock["Opakowanie"] == "Kartony"].copy()
         
-    # 4. Вывод Метрик
     total_pallets = len(df_stock)
 
-    # st.markdown("---")
     if str(selected_mandant_stock) == "351":
-        # Tylko jedna metryka – łączna liczba palet
         m1, _, _, _ = st.columns(4)
         m1.metric(STR["metric_total_pallets"], f"{total_pallets:,}")
     else:
         cartons_count = df_stock[df_stock["Opakowanie"] == "Kartony"].shape[0]
         other_pkg_count = df_stock[df_stock["Opakowanie"] != "Kartony"].shape[0]
-
         m1, m2, m3, _ = st.columns(4)
         m1.metric(STR["metric_total_pallets"], f"{total_pallets:,}")
         m2.metric(STR["metric_cartons"], f"{cartons_count:,}")
         m3.metric(STR["metric_other_pkg"], f"{other_pkg_count:,}")
-    st.markdown("---")
-
-
-
-    # 5. Первая таблица (детальная)
-    with st.expander(f"**{STR['stock_table_pids']}** ({total_pallets:,} palet)"):
-        cols_pids = {
-            "ARTIKELNR": "Artykuł",
-            "ARTBEZ1": "Opis artykułu",
-            "QUANTITY": "Ilość na palecie",
-            "LHMNR": "PID",
-            "PLATZ": "Miejsce",
-            "CHARGE1": "Dodatkowy opis",
-            "IN_DATE": "IN_DATE",
-            "IN_TIME": "IN_TIME",
-            "OUT_DATE": "OUT_DATE",
-            "OUT_TIME": "OUT_TIME",
-            "CREATED_BY": "CREATED_BY",
-            "CHANGED_DATE": "CHANGED_DATE",
-            "CHANGED_TIME": "CHANGED_TIME",
-            "ZUSTAND": "ZUSTAND",
-        }
-        
-        # Выбираем и переименовываем колонки для отображения
-        df_display_pids = df_stock[cols_pids.keys()].rename(columns=cols_pids)
-
-        st.dataframe(
-            df_display_pids,
-            use_container_width=True,
-            height=800, 
-            hide_index=True
-        )
-
-    # 6. Вторая таблица (агрегат)
-    df_agg = aggregate_stock_df(df_stock)
-
-    with st.expander(f"**{STR['stock_table_agg']}** ({len(df_agg):,} wierszy)"):
-        st.dataframe(
-            df_agg,
-            use_container_width=True,
-            height=800,
-            hide_index=True
-        )
-
     
-
-    # 7. Предупреждение
     st.markdown("---")
-    st.markdown(f'<div class="small-note">{STR["stock_warning"]}</div>', unsafe_allow_html=True)
+
+    with st.expander(f"**{STR['stock_table_pids']}** ({total_pallets:,} palet)"):
+        cols_pids = {"ARTIKELNR": "Artykuł", "ARTBEZ1": "Opis artykułu", "QUANTITY": "Ilość na palecie", "LHMNR": "PID", "PLATZ": "Miejsce"}
+        st.dataframe(df_stock[list(cols_pids.keys())].rename(columns=cols_pids), use_container_width=True, height=400, hide_index=True)
+
+    df_agg = aggregate_stock_df(df_stock)
+    with st.expander(f"**{STR['stock_table_agg']}** ({len(df_agg):,} wierszy)"):
+        st.dataframe(df_agg, use_container_width=True, height=400, hide_index=True)
 
 
-def render_stock_history(
-    df,
-    selected_mandant_stock,
-    selected_artikel_stock,
-    history_start,
-    history_end,
-    show_cartons_only,
-    STR,
-    widget_prefix: str = "",
-):
-
-    """
-    Рисует блок '📈 Historia liczby palet na magazynie':
-    - выбор диапазона дат,
-    - чекбоксы серий,
-    - сам график.
-    """
-
+def render_stock_history(df, selected_mandant_stock, selected_artikel_stock, history_start, history_end, show_cartons_only, STR, widget_prefix: str = ""):
     st.subheader("📈 Historia liczby palet na magazynie")
 
+    # 1. Получаем данные
     history_df = build_stock_history(
         df=df,
         selected_mandant=selected_mandant_stock,
@@ -378,51 +218,80 @@ def render_stock_history(
         show_cartons_only=show_cartons_only,
     )
 
+    if history_df is not None and not history_df.empty:
+        # --- ЖЕСТКАЯ ОЧИСТКА ДАННЫХ ПЕРЕД ГРАФИКОМ ---
+        plot_df = history_df.copy()
+        
+        for col in ["TOTAL_PALLETS", "CARTONS", "OTHER"]:
+            if col in plot_df.columns:
+                # Шаг А: Превращаем всё в строку
+                # Шаг Б: Убираем запятые (разделители тысяч)
+                # Шаг В: Превращаем в число (float)
+                plot_df[col] = (
+                    plot_df[col]
+                    .astype(str)
+                    .str.replace(',', '', regex=False)
+                    .pipe(pd.to_numeric, errors='coerce')
+                )
+        
+        # Гарантируем формат даты
+        plot_df["DATE"] = pd.to_datetime(plot_df["DATE"])
+        plot_df = plot_df.sort_values("DATE")
 
-    if not history_df.empty:
-        # 🔹 Wybór serii na wykresie – zależnie od mandanta
-        if str(selected_mandant_stock) == "351":
-            show_total = st.checkbox(
-                "Pokaż łączną liczbę palet",
-                value=True,
-                key=f"{widget_prefix}hist_show_total",
-            )
-            show_cart = False
-            show_other = False
-        else:
-            show_total = st.checkbox(
-                "Pokaż łączną liczbę palet",
-                value=True,
-                key=f"{widget_prefix}hist_show_total",
-            )
-            show_cart = st.checkbox(
-                "Pokaż kartony",
-                value=True,
-                key=f"{widget_prefix}hist_show_cartons",
-            )
-            show_other = st.checkbox(
-                "Pokaż inne opakowania",
-                value=False,
-                key=f"{widget_prefix}hist_show_other",
-            )
+        # 2. Выбор серий
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            show_total = st.checkbox("Pokaż łączną liczbę palet", value=True, key=f"{widget_prefix}h_total")
+        
+        show_cart = False
+        show_other = False
+        if str(selected_mandant_stock) != "351":
+            with col2:
+                show_cart = st.checkbox("Pokaż kartony", value=True, key=f"{widget_prefix}h_cart")
+            with col3:
+                show_other = st.checkbox("Pokaż inne opakowania", value=False, key=f"{widget_prefix}h_other")
 
+        # 3. Создаем график через go.Figure
+        fig = go.Figure()
 
-        # Формируем DataFrame для графика
-        plot_df = history_df.set_index("DATE").copy()
-        cols_to_plot = []
-        if show_total:
-            cols_to_plot.append("TOTAL_PALLETS")
-        if show_cart:
-            cols_to_plot.append("CARTONS")
-        if show_other:
-            cols_to_plot.append("OTHER")
+        if show_total and "TOTAL_PALLETS" in plot_df.columns:
+            # Используем .tolist(), чтобы Plotly не мог прочитать индексы DataFrame
+            fig.add_trace(go.Scatter(
+                x=plot_df["DATE"].tolist(),
+                y=plot_df["TOTAL_PALLETS"].tolist(),
+                name="Suma wszystkich palet",
+                mode='lines+markers',
+                line=dict(color='#0078D4', width=3),
+                hovertemplate="Data: %{x}<br>Suma: %{y:,.0f}<extra></extra>"
+            ))
 
-        if cols_to_plot:
-            st.line_chart(
-                plot_df[cols_to_plot],
-                use_container_width=True,
-            )
-        else:
-            st.info("Zaznacz przynajmniej jedną opcję do wyświetlenia na wykresie.")
+        if show_cart and "CARTONS" in plot_df.columns:
+            fig.add_trace(go.Scatter(
+                x=plot_df["DATE"].tolist(),
+                y=plot_df["CARTONS"].tolist(),
+                name="Tylko kartony",
+                mode='lines+markers',
+                line=dict(color='#E74C3C', width=2),
+                hovertemplate="Data: %{x}<br>Kartony: %{y:,.0f}<extra></extra>"
+            ))
+
+        # 4. Настройка осей (важно!)
+        fig.update_layout(
+            template="plotly_dark",
+            hovermode="x unified",
+            xaxis=dict(type='date', showgrid=True, gridcolor='rgba(255,255,255,0.1)'),
+            yaxis=dict(
+                title="Liczba palet",
+                showgrid=True,
+                gridcolor='rgba(255,255,255,0.1)',
+                rangemode="tozero", # Ось Y всегда от 0
+                tickformat=".0f"    # Убираем дробные значения на оси
+            ),
+            height=500,
+            margin=dict(l=0, r=0, t=30, b=0),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("Brak danych do zbudowania historii w wybranym zakresie dat.")
+        st.info("Brak danych do wyświetlenia historii.")

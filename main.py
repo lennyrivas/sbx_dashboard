@@ -120,7 +120,7 @@ def render_analysis_filters(df: pd.DataFrame):
 
     # Artykuł – z powrotem multiselect, ale w nieco węższej kolumnie
     with col_artikel:
-        artikel_options = sorted(
+        all_artikel_options = sorted(
             df[df["MANDANT"].astype(str) == selected_mandant]["ARTIKELNR"]
             .dropna()
             .unique()
@@ -128,7 +128,7 @@ def render_analysis_filters(df: pd.DataFrame):
         )
         selected_artikel = st.multiselect(
             "Artykuł (ARTIKELNR)",
-            options=artikel_options,
+            options=all_artikel_options,
             default=[],
             key="analysis_artikel",
         )
@@ -174,8 +174,8 @@ def render_analysis_filters(df: pd.DataFrame):
     # Здесь НЕ пересчитываем IS_DELETED – он уже посчитан при загрузке df
     # и основан на ZUSTAND != 401.
 
-    # Lista dostępnych artykułów po filtrach
-    artikel_options = sorted(filtered_pallets_df["ARTIKELNR"].unique().tolist())
+    # Zwracamy pełną listę artykułów dla mandanta (do ręcznych zamówień), a nie tylko przefiltrowaną
+    # artikel_options = sorted(filtered_pallets_df["ARTIKELNR"].unique().tolist())
 
 
     return (
@@ -185,7 +185,7 @@ def render_analysis_filters(df: pd.DataFrame):
         date_start,
         date_end,
         filtered_pallets_df,
-        artikel_options,
+        all_artikel_options,
     )
 
 
