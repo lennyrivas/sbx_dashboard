@@ -7,30 +7,6 @@ import numpy as np
 from modules.ui_strings import STR
 
 
-def classify_pallet(
-    artikelnr: str,
-    kartony_prefixes: list[str],
-    pallets_frames_prefixes: list[str],   # можно оставить параметр, но не использовать
-    other_packaging_prefixes: list[str],
-) -> str:
-    """
-    Простая классификация:
-    - "Kartony"      – если ARTIKELNR НАЧИНАЕТСЯ с одного из kartony_prefixes
-    - "Inne opakowania" – всё остальное
-    """
-
-    art = str(artikelnr).strip().upper()
-
-    # 1) Kartony – строго по НАЧАЛУ строки (prefix)
-    for pref in kartony_prefixes:
-        p = str(pref).strip().upper()
-        if p and art.startswith(p):
-            return "Kartony"
-
-    # 2) Всё, что не попало в kartony, считаем "Inne opakowania"
-    return "Inne opakowania"
-
-
 def show_main_display(filtered_df, deleted_df, STR):
     """
     Основное отображение:
@@ -268,4 +244,3 @@ def render_downloads(deleted_df, summary_df, STR):
         )
     except Exception:
         st.info(STR["install_openpyxl"])
-

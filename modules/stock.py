@@ -7,8 +7,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from modules.ui_strings import STR
-from modules.display_main import classify_pallet 
-from utils import load_packaging_config
+from utils import load_packaging_config, classify_pallet
 
 
 # --- Логика фильтрации ---
