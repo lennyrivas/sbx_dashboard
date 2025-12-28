@@ -821,6 +821,14 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
 
         st.dataframe(df_show, use_container_width=True, hide_index=True)
         
+        # Agregacja widocznych palet (podsumowanie)
+        st.markdown("#### ∑ Podsumowanie listy palet")
+        df_list_agg = filtered_pallets_df.groupby(["ARTIKELNR", "ARTBEZ1"], as_index=False).agg(
+            Liczba_palet=("LHMNR", "nunique"),
+            Suma_sztuk=("QUANTITY", "sum")
+        ).rename(columns={"Liczba_palet": "Liczba palet", "Suma_sztuk": "Suma sztuk"}).sort_values("Liczba palet", ascending=False)
+        st.dataframe(df_list_agg, use_container_width=True, hide_index=True)
+
         # Расширенная аналитика по дням (в expanders)
         with st.expander("📊 Szczegóły przyjęć i usunięć według dnia", expanded=False):
             if not selected_artikel:
