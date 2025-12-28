@@ -244,15 +244,30 @@ def render_analysis_filters(df: pd.DataFrame):
         )
 
     # Maski filtrów
-    mask_base = (df["MANDANT"].astype(str) == selected_mandant)
+    mask_global = (df["MANDANT"].astype(str) == selected_mandant)
 
     # Filtr po dacie (OUT_DATE lub IN_DATE)
-    mask_base &= df[date_field].between(
+    mask_global &= df[date_field].between(
         pd.Timestamp(date_start),
         pd.Timestamp(date_end),
     )
 
-    # Filtr czasu (IN_TIME lub OUT_TIME)
+    # 👉 Dodatkowo: przy Tryb = Wyjście pokazujemy tylko palety usunięte (ZUSTAND != 401)
+    # To jest część definicji trybu, więc wchodzi do mask_global
+    if date_field == "OUT_DATE":
+        if "IS_DELETED" in df.columns:
+            mask_global &= df["IS_DELETED"]
+        else:
+            mask_global &= df["ZUSTAND"].astype(str).str.strip() != "401"
+
+    # 1. DataFrame bez filtra artykułów I BEZ FILTRA CZASU (do statystyk porównawczych)
+    # Dzięki temu metryki "Artykuły z rozbieżnością" są niezależne od filtra czasu i artykułu.
+    filtered_pallets_no_art_df = df[mask_global].copy()
+
+    # Teraz tworzymy maskę dla widoku (z czasem i artykułami)
+    mask_view = mask_global.copy()
+
+    # Filtr czasu (IN_TIME lub OUT_TIME) - tylko dla głównego widoku
     if selected_time_range:
         t_start_str, t_end_str = selected_time_range.split(" - ")
         t_start = datetime.strptime(t_start_str, "%H:%M").time()
@@ -265,25 +280,13 @@ def render_analysis_filters(df: pd.DataFrame):
                 return False
             return t_start <= val < t_end
             
-        mask_base &= df[time_col].apply(filter_time_range)
+        mask_view &= df[time_col].apply(filter_time_range)
 
-    # 👉 Dodatkowo: przy Tryb = Wyjście pokazujemy tylko palety usunięte (ZUSTAND != 401)
-    if date_field == "OUT_DATE":
-        # Możesz użyć albo IS_DELETED, albo bezpośrednio ZUSTAND != 401
-        if "IS_DELETED" in df.columns:
-            mask_base &= df["IS_DELETED"]
-        else:
-            mask_base &= df["ZUSTAND"].astype(str).str.strip() != "401"
-
-    # 1. DataFrame bez filtra artykułów (do statystyk porównawczych)
-    filtered_pallets_no_art_df = df[mask_base].copy()
-
-    # 2. DataFrame z filtrem artykułów (do głównego widoku)
-    mask_final = mask_base.copy()
+    # Filtr artykułów - tylko dla głównego widoku
     if selected_artikel:
-        mask_final &= df["ARTIKELNR"].isin([s.strip().upper() for s in selected_artikel])
+        mask_view &= df["ARTIKELNR"].isin([s.strip().upper() for s in selected_artikel])
 
-    filtered_pallets_df = df[mask_final].copy()
+    filtered_pallets_df = df[mask_view].copy()
 
     # Здесь НЕ пересчитываем IS_DELETED – он уже посчитан при загрузке df
     # и основан на ZUSTAND != 401.
