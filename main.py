@@ -111,12 +111,15 @@ def render_analysis_filters(df: pd.DataFrame):
 
     # Czas (1h)
     with col_time:
-        selected_time_range = st.selectbox(
-            "Czas (1h)",
-            options=time_options,
-            index=0,
-            key="analysis_time_range",
-        )
+        if date_mode_label == "Dzień":
+            selected_time_range = st.selectbox(
+                "Czas (1h)",
+                options=time_options,
+                index=0,
+                key="analysis_time_range",
+            )
+        else:
+            selected_time_range = None
 
     # Artykuł – z powrotem multiselect, ale w nieco węższej kolumnie
     with col_artikel:
@@ -245,27 +248,49 @@ with tab_analysis:
     ) = render_analysis_filters(df)
 
     # После фильтров считаем deleted_pallets и метрики
-    deleted_pallets = filtered_pallets_df[filtered_pallets_df["IS_DELETED"]]
+    kartony_prefixes, _ = load_packaging_config()
 
-    if selected_mandant == "352":
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Wybrane palety", f"{len(filtered_pallets_df):,}")
-        col2.metric("Usunięte palety", f"{len(deleted_pallets):,}")
+    if mode == STR["mode_received"]:
+        # Tryb Wejście: pokazujemy przyjęte palety i podział na opakowania
+        total_received = len(filtered_pallets_df)
+        
+        if selected_mandant == "352":
+            kartony_count = filtered_pallets_df[
+                filtered_pallets_df["ARTIKELNR"].str.startswith(
+                    tuple(kartony_prefixes),
+                    na=False,
+                )
+            ].shape[0]
+            inne_count = total_received - kartony_count
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Przyjęte palety", f"{total_received:,}")
+            col2.metric("Kartony (przyjęte)", f"{kartony_count:,}")
+            col3.metric("Inne opakowania (przyjęte)", f"{inne_count:,}")
+        else:
+            # Mandant 351: tylko przyjęte palety
+            st.metric("Przyjęte palety", f"{total_received:,}")
 
-        kartony_prefixes, _ = load_packaging_config()
-        kartony_count = deleted_pallets[
-            deleted_pallets["ARTIKELNR"].str.startswith(
-                tuple(kartony_prefixes),
-                na=False,
-            )
-        ].shape[0]
-        inne_count = len(deleted_pallets) - kartony_count
-        col3.metric("Usunięte kartony", f"{kartony_count:,}")
-        col4.metric("Inne opakowania", f"{inne_count:,}")
     else:
-        col1, col2 = st.columns(2)
-        col1.metric("Wybrane palety", f"{len(filtered_pallets_df):,}")
-        col2.metric("Usunięte palety", f"{len(deleted_pallets):,}")
+        # Tryb Wyjście: zachowujemy starą logikę (usunięte)
+        deleted_pallets = filtered_pallets_df[filtered_pallets_df["IS_DELETED"]]
+
+        if selected_mandant == "352":
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Usunięte palety", f"{len(deleted_pallets):,}")
+
+            kartony_count = deleted_pallets[
+                deleted_pallets["ARTIKELNR"].str.startswith(
+                    tuple(kartony_prefixes),
+                    na=False,
+                )
+            ].shape[0]
+            inne_count = len(deleted_pallets) - kartony_count
+            col2.metric("Usunięte kartony", f"{kartony_count:,}")
+            col3.metric("Inne opakowania", f"{inne_count:,}")
+        else:
+            # Mandant 351: tylko usunięte palety
+            st.metric("Usunięte palety", f"{len(deleted_pallets):,}")
 
     render_orders_tab(
         artikel_options,
