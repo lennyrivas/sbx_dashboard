@@ -813,6 +813,10 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
 
         df_show = filtered_pallets_df[cols_show].sort_values(by="OUT_DATE", ascending=False).reset_index(drop=True)
         
+        # Formatowanie daty do YYYY-MM-DD (bez godziny)
+        df_show["IN_DATE"] = df_show["IN_DATE"].dt.date
+        df_show["OUT_DATE"] = df_show["OUT_DATE"].dt.date
+
         st.dataframe(df_show, use_container_width=True, hide_index=True)
         
         # Расширенная аналитика по дням (в expanders)
