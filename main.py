@@ -124,6 +124,10 @@ with tab_analysis:
         filtered_pallets_df,
         selected_artikel,
         filtered_pallets_no_art_df=filtered_pallets_no_art_df,
+        full_df=df,
+        date_start=date_start,
+        date_end=date_end,
+        selected_mandant=selected_mandant,
     )
 
 with tab_stock:

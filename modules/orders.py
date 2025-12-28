@@ -314,12 +314,12 @@ def parse_order_file_to_df(fobj):
             rows_padded = [r + [""] * (max_cols - len(r)) for r in rows_data]
             df_o = pd.DataFrame(rows_padded)
 
-             # ===== ОТЛАДКА: покажи первые 5 строк и колонки =====
-        print(f"\n=== DEBUGOWANIE PLIKU: {name} ===")
-        print("Pierwsze 5 wierszy:")
-        print(df_o.head().to_string())
-        print(f"Liczba kolumn: {df_o.shape[1]}")
-        print("=== KONIEC DEBUGOWANIA ===\n")
+        #      # ===== ОТЛАДКА: покажи первые 5 строк и колонки =====
+        # print(f"\n=== DEBUGOWANIE PLIKU: {name} ===")
+        # print("Pierwsze 5 wierszy:")
+        # print(df_o.head().to_string())
+        # print(f"Liczba kolumn: {df_o.shape[1]}")
+        # print("=== KONIEC DEBUGOWANIA ===\n")
 
     except Exception as e:
         print("\n===== ORDER PARSE ERROR (XLSX ZIP/XML) =====", file=sys.stderr)
@@ -787,7 +787,7 @@ def render_manual_orders_editor(artikel_options):
 
 # ---------- Główna funkcja zakładki 'Zamówienia' ----------
 
-def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artikel=None, filtered_pallets_no_art_df=None):
+def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artikel=None, filtered_pallets_no_art_df=None, full_df=None, date_start=None, date_end=None, selected_mandant=None):
     """
     Główna funkcja dla analizy palet + zamówień.
     """
@@ -821,43 +821,58 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
         
         # Расширенная аналитика по дням (в expanders)
         with st.expander("📊 Szczegóły przyjęć i usunięć według dnia", expanded=False):
-            # 1. Принятые паллеты по дням
-            accepted_pallets = filtered_pallets_df[~filtered_pallets_df["IS_DELETED"]].copy()
-            
-            if not accepted_pallets.empty and selected_artikel:
-                daily_accepted = accepted_pallets.groupby(["ARTIKELNR", "IN_DATE"], as_index=False).agg(
-                    Palety_przyjęte=("LHMNR", "nunique"),
-                    Sztuki_przyjęte=("QUANTITY", "sum")
-                )
-                daily_accepted["IN_DATE"] = daily_accepted["IN_DATE"].dt.date
-                daily_accepted = daily_accepted[daily_accepted["ARTIKELNR"].isin(selected_artikel)]
-                daily_accepted = daily_accepted.sort_values(["ARTIKELNR", "IN_DATE"], ascending=[True, False])
-                
-                st.subheader("📥 Przyjęcia według dnia")
-                st.dataframe(daily_accepted, use_container_width=True, hide_index=True)
-            elif selected_artikel:
-                st.info("Brak przyjętych palet dla wybranego artykułu.")
-            
-            # 2. Удалённые паллеты по дням
-            deleted_pallets_daily = filtered_pallets_df[filtered_pallets_df["IS_DELETED"]].copy()
-            
-            if not deleted_pallets_daily.empty and selected_artikel:
-                daily_deleted = deleted_pallets_daily.groupby(["ARTIKELNR", "OUT_DATE"], as_index=False).agg(
-                    Palety_usunięte=("LHMNR", "nunique"),
-                    Sztuki_usunięte=("QUANTITY", "sum")
-                )
-                daily_deleted["OUT_DATE"] = daily_deleted["OUT_DATE"].dt.date
-                daily_deleted = daily_deleted[daily_deleted["ARTIKELNR"].isin(selected_artikel)]
-                daily_deleted = daily_deleted.sort_values(["ARTIKELNR", "OUT_DATE"], ascending=[True, False])
-                
-                st.markdown("---")
-                st.subheader("🗑️ Usunięcia według dnia")
-                st.dataframe(daily_deleted, use_container_width=True, hide_index=True)
-            elif selected_artikel:
-                st.info("Brak usuniętych palet dla wybranego artykułu.")
-            
             if not selected_artikel:
                 st.info("Wybierz artykuł w filtrach, aby zobaczyć szczegółową tabelę po dniach.")
+            elif full_df is not None and selected_mandant and date_start and date_end:
+                # --- Przygotowanie danych niezależnie od trybu (Wejście/Wyjście) ---
+                
+                # 1. Filtr Mandant i Artykuł
+                mask_base = (full_df["MANDANT"].astype(str) == str(selected_mandant))
+                mask_base &= full_df["ARTIKELNR"].isin([a.strip().upper() for a in selected_artikel])
+                df_subset = full_df[mask_base]
+
+                # 2. Przyjęcia (IN_DATE w zakresie dat)
+                mask_in = df_subset["IN_DATE"].between(pd.Timestamp(date_start), pd.Timestamp(date_end))
+                df_in = df_subset[mask_in].copy()
+
+                if not df_in.empty:
+                    daily_accepted = df_in.groupby(["ARTIKELNR", "IN_DATE"], as_index=False).agg(
+                        Palety_przyjęte=("LHMNR", "nunique"),
+                        Sztuki_przyjęte=("QUANTITY", "sum")
+                    )
+                    daily_accepted["IN_DATE"] = daily_accepted["IN_DATE"].dt.date
+                    daily_accepted = daily_accepted.sort_values(["ARTIKELNR", "IN_DATE"], ascending=[True, False])
+                    
+                    st.subheader("📥 Przyjęcia według dnia")
+                    st.dataframe(daily_accepted, use_container_width=True, hide_index=True)
+                else:
+                    st.info("Brak przyjętych palet dla wybranego artykułu w wybranym zakresie dat.")
+
+                st.markdown("---")
+
+                # 3. Usunięcia (OUT_DATE w zakresie dat + IS_DELETED)
+                mask_out = df_subset["OUT_DATE"].between(pd.Timestamp(date_start), pd.Timestamp(date_end))
+                if "IS_DELETED" in df_subset.columns:
+                    mask_deleted = df_subset["IS_DELETED"]
+                else:
+                    mask_deleted = df_subset["ZUSTAND"] != "401"
+                
+                df_out = df_subset[mask_out & mask_deleted].copy()
+
+                if not df_out.empty:
+                    daily_deleted = df_out.groupby(["ARTIKELNR", "OUT_DATE"], as_index=False).agg(
+                        Palety_usunięte=("LHMNR", "nunique"),
+                        Sztuki_usunięte=("QUANTITY", "sum")
+                    )
+                    daily_deleted["OUT_DATE"] = daily_deleted["OUT_DATE"].dt.date
+                    daily_deleted = daily_deleted.sort_values(["ARTIKELNR", "OUT_DATE"], ascending=[True, False])
+                    
+                    st.subheader("🗑️ Usunięcia według dnia")
+                    st.dataframe(daily_deleted, use_container_width=True, hide_index=True)
+                else:
+                    st.info("Brak usuniętych palet dla wybranego artykułu w wybranym zakresie dat.")
+            else:
+                st.warning("Brak danych do analizy szczegółowej.")
 
 
     else:
