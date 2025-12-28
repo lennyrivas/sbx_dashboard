@@ -23,7 +23,7 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date, debug
     
     if debug:
         st.markdown(f"### 🐞 DEBUG: Analiza na dzień {selected_date.strftime('%d.%m.%Y')}")
-        st.info(f"**START**: Całkowita liczba wierszy в pliku: {len(df)}")
+        st.info(f"**START**: Całkowita liczba wierszy w pliku: {len(df)}")
 
     # 🎯 ШАГ 1: Базовый фильтр mandant
     df_filtered = df[df["MANDANT"].astype(str) == selected_mandant].copy()

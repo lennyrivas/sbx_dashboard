@@ -71,6 +71,7 @@ with tab_analysis:
         date_end,
         filtered_pallets_df,
         artikel_options,
+        filtered_pallets_no_art_df,
     ) = render_analysis_filters(df)
 
     # После фильтров считаем deleted_pallets и метрики
@@ -122,6 +123,7 @@ with tab_analysis:
         artikel_options,
         filtered_pallets_df,
         selected_artikel,
+        filtered_pallets_no_art_df=filtered_pallets_no_art_df,
     )
 
 with tab_stock:

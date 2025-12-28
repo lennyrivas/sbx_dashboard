@@ -315,11 +315,11 @@ def parse_order_file_to_df(fobj):
             df_o = pd.DataFrame(rows_padded)
 
              # ===== ОТЛАДКА: покажи первые 5 строк и колонки =====
-        print(f"\n=== ОТЛАДКА ФАЙЛА: {name} ===")
-        print("Первые 5 строк:")
+        print(f"\n=== DEBUGOWANIE PLIKU: {name} ===")
+        print("Pierwsze 5 wierszy:")
         print(df_o.head().to_string())
-        print(f"Количество колонок: {df_o.shape[1]}")
-        print("=== КОНЕЦ ОТЛАДКИ ===\n")
+        print(f"Liczba kolumn: {df_o.shape[1]}")
+        print("=== KONIEC DEBUGOWANIA ===\n")
 
     except Exception as e:
         print("\n===== ORDER PARSE ERROR (XLSX ZIP/XML) =====", file=sys.stderr)
@@ -787,7 +787,7 @@ def render_manual_orders_editor(artikel_options):
 
 # ---------- Główna funkcja zakładki 'Zamówienia' ----------
 
-def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artikel=None):
+def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artikel=None, filtered_pallets_no_art_df=None):
     """
     Główna funkcja dla analizy palet + zamówień.
     """
@@ -967,11 +967,14 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
     )
 
     # 3) СРАВНЕНИЕ (если есть палеты)
-    if filtered_pallets_df is not None and not filtered_pallets_df.empty:
+    # Używamy danych bez filtra artykułów (jeśli dostępne), aby metryki porównawcze były globalne
+    df_for_comparison = filtered_pallets_no_art_df if filtered_pallets_no_art_df is not None else filtered_pallets_df
+
+    if df_for_comparison is not None and not df_for_comparison.empty:
         st.markdown("---")
         st.subheader("⚖️ Porównanie zamówień z usuniętymi paletami")
 
-        deleted_pallets = filtered_pallets_df[filtered_pallets_df["IS_DELETED"]].copy()
+        deleted_pallets = df_for_comparison[df_for_comparison["IS_DELETED"]].copy()
 
         if not deleted_pallets.empty:
             deleted_agg = deleted_pallets.groupby("ARTIKELNR", as_index=False).agg(
