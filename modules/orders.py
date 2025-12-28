@@ -188,6 +188,7 @@ def parse_order_file_to_df(fobj):
     import xml.etree.ElementTree as ET
 
     name = getattr(fobj, "name", "uploaded")
+    df_o = None
 
     # CSV / TXT – на будущее
     if name.lower().endswith((".csv", ".txt")):
@@ -197,7 +198,7 @@ def parse_order_file_to_df(fobj):
                 sep=";",
                 dtype=str,
                 encoding="utf-8",
-                header=0,
+                header=None,
             )
         except Exception as e:
             print("\n===== ORDER PARSE ERROR (CSV/TXT) =====", file=sys.stderr)
@@ -205,128 +206,121 @@ def parse_order_file_to_df(fobj):
             print("===== END ORDER PARSE ERROR =====\n", file=sys.stderr)
             st.error(f"Błąd czytania pliku zamówienia {name}: {e}")
             return None
-        return None
 
     # ---- XLSX: низкоуровневое чтение XML ----
-    try:
-        fobj.seek(0)
-        file_bytes = fobj.read()
-        fobj.seek(0)
+    else:
+        try:
+            fobj.seek(0)
+            file_bytes = fobj.read()
+            fobj.seek(0)
 
-        with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as zf:
-            # workbook.xml – szukamy arkusza z zamówieniem
-            with zf.open("xl/workbook.xml") as wb:
-                wb_tree = ET.parse(wb)
-                wb_root = wb_tree.getroot()
-            ns = {"ns": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+            with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as zf:
+                # workbook.xml – szukamy arkusza z zamówieniem
+                with zf.open("xl/workbook.xml") as wb:
+                    wb_tree = ET.parse(wb)
+                    wb_root = wb_tree.getroot()
+                ns = {"ns": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
-            sheet_id = None
-            for sheet in wb_root.findall("ns:sheets/ns:sheet", ns):
-                sheet_name = sheet.attrib.get("name", "")
-                r_id = sheet.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
-                if sheet_name in ("OrderMasterSheet", "Order_Master_Sheet"):
-                    sheet_id = r_id
-                    break
-            if sheet_id is None:
-                first_sheet = wb_root.find("ns:sheets/ns:sheet", ns)
-                if first_sheet is None:
-                    raise ValueError("Brak arkuszy w pliku XLSX")
-                sheet_id = first_sheet.attrib.get(
-                    "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
-                )
-
-            # workbook.xml.rels – ścieżka do pliku arkusza
-            with zf.open("xl/_rels/workbook.xml.rels") as rels:
-                rels_tree = ET.parse(rels)
-                rels_root = rels_tree.getroot()
-            rel_ns = {"rel": "http://schemas.openxmlformats.org/package/2006/relationships"}
-
-            sheet_path = None
-            for rel in rels_root.findall("rel:Relationship", rel_ns):
-                if rel.attrib.get("Id") == sheet_id:
-                    sheet_path = rel.attrib.get("Target")
-                    break
-            if sheet_path is None:
-                raise ValueError("Nie można znaleźć arkusza dla zamówień (rels).")
-
-            if not sheet_path.startswith("xl/"):
-                sheet_path = "xl/" + sheet_path
-
-            # XML wybranego arkusza
-            with zf.open(sheet_path) as sf:
-                sheet_tree = ET.parse(sf)
-                sheet_root = sheet_tree.getroot()
-
-            # sharedStrings – teksty
-            shared_strings = []
-            if "xl/sharedStrings.xml" in zf.namelist():
-                with zf.open("xl/sharedStrings.xml") as ssf:
-                    ss_tree = ET.parse(ssf)
-                    ss_root = ss_tree.getroot()
-                for si in ss_root.findall("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}si"):
-                    t = si.find("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t")
-                    shared_strings.append(t.text if t is not None else "")
-
-            # wiersze + komórki
-            rows_data = []
-            for row_elem in sheet_root.findall(
-                ".//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row"
-            ):
-                row_values = []
-                last_col_idx = -1
-                for cell in row_elem.findall(
-                    "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}c"
-                ):
-                    cell_ref = cell.attrib.get("r", "")
-                    col_letters = "".join(ch for ch in cell_ref if ch.isalpha())
-                    col_idx = 0
-                    for ch in col_letters:
-                        col_idx = col_idx * 26 + (ord(ch.upper()) - ord("A") + 1)
-                    col_idx -= 1  # 0-based
-
-                    while last_col_idx + 1 < col_idx:
-                        row_values.append("")
-                        last_col_idx += 1
-
-                    v = cell.find(
-                        "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}v"
+                sheet_id = None
+                for sheet in wb_root.findall("ns:sheets/ns:sheet", ns):
+                    sheet_name = sheet.attrib.get("name", "")
+                    r_id = sheet.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+                    if sheet_name in ("OrderMasterSheet", "Order_Master_Sheet"):
+                        sheet_id = r_id
+                        break
+                if sheet_id is None:
+                    first_sheet = wb_root.find("ns:sheets/ns:sheet", ns)
+                    if first_sheet is None:
+                        raise ValueError("Brak arkuszy w pliku XLSX")
+                    sheet_id = first_sheet.attrib.get(
+                        "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
                     )
-                    cell_type = cell.attrib.get("t")
-                    if v is not None and v.text is not None:
-                        if cell_type == "s":
-                            idx = int(v.text)
-                            value = shared_strings[idx] if 0 <= idx < len(shared_strings) else ""
+
+                # workbook.xml.rels – ścieżka do pliku arkusza
+                with zf.open("xl/_rels/workbook.xml.rels") as rels:
+                    rels_tree = ET.parse(rels)
+                    rels_root = rels_tree.getroot()
+                rel_ns = {"rel": "http://schemas.openxmlformats.org/package/2006/relationships"}
+
+                sheet_path = None
+                for rel in rels_root.findall("rel:Relationship", rel_ns):
+                    if rel.attrib.get("Id") == sheet_id:
+                        sheet_path = rel.attrib.get("Target")
+                        break
+                if sheet_path is None:
+                    raise ValueError("Nie można znaleźć arkusza dla zamówień (rels).")
+
+                if not sheet_path.startswith("xl/"):
+                    sheet_path = "xl/" + sheet_path
+
+                # XML wybranego arkusza
+                with zf.open(sheet_path) as sf:
+                    sheet_tree = ET.parse(sf)
+                    sheet_root = sheet_tree.getroot()
+
+                # sharedStrings – teksty
+                shared_strings = []
+                if "xl/sharedStrings.xml" in zf.namelist():
+                    with zf.open("xl/sharedStrings.xml") as ssf:
+                        ss_tree = ET.parse(ssf)
+                        ss_root = ss_tree.getroot()
+                    for si in ss_root.findall("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}si"):
+                        t = si.find("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t")
+                        shared_strings.append(t.text if t is not None else "")
+
+                # wiersze + komórki
+                rows_data = []
+                for row_elem in sheet_root.findall(
+                    ".//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row"
+                ):
+                    row_values = []
+                    last_col_idx = -1
+                    for cell in row_elem.findall(
+                        "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}c"
+                    ):
+                        cell_ref = cell.attrib.get("r", "")
+                        col_letters = "".join(ch for ch in cell_ref if ch.isalpha())
+                        col_idx = 0
+                        for ch in col_letters:
+                            col_idx = col_idx * 26 + (ord(ch.upper()) - ord("A") + 1)
+                        col_idx -= 1  # 0-based
+
+                        while last_col_idx + 1 < col_idx:
+                            row_values.append("")
+                            last_col_idx += 1
+
+                        v = cell.find(
+                            "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}v"
+                        )
+                        cell_type = cell.attrib.get("t")
+                        if v is not None and v.text is not None:
+                            if cell_type == "s":
+                                idx = int(v.text)
+                                value = shared_strings[idx] if 0 <= idx < len(shared_strings) else ""
+                            else:
+                                value = v.text
                         else:
-                            value = v.text
-                    else:
-                        value = ""
+                            value = ""
 
-                    row_values.append(str(value))
-                    last_col_idx = col_idx
+                        row_values.append(str(value))
+                        last_col_idx = col_idx
 
-                if row_values:
-                    rows_data.append(row_values)
+                    if row_values:
+                        rows_data.append(row_values)
 
-            if not rows_data:
-                raise ValueError("Brak danych w arkuszu zamówień.")
+                if not rows_data:
+                    raise ValueError("Brak danych w arkuszu zamówień.")
 
-            max_cols = max(len(r) for r in rows_data)
-            rows_padded = [r + [""] * (max_cols - len(r)) for r in rows_data]
-            df_o = pd.DataFrame(rows_padded)
+                max_cols = max(len(r) for r in rows_data)
+                rows_padded = [r + [""] * (max_cols - len(r)) for r in rows_data]
+                df_o = pd.DataFrame(rows_padded)
 
-        #      # ===== ОТЛАДКА: покажи первые 5 строк и колонки =====
-        # print(f"\n=== DEBUGOWANIE PLIKU: {name} ===")
-        # print("Pierwsze 5 wierszy:")
-        # print(df_o.head().to_string())
-        # print(f"Liczba kolumn: {df_o.shape[1]}")
-        # print("=== KONIEC DEBUGOWANIA ===\n")
-
-    except Exception as e:
-        print("\n===== ORDER PARSE ERROR (XLSX ZIP/XML) =====", file=sys.stderr)
-        traceback.print_exc()
-        print("===== END ORDER PARSE ERROR =====\n", file=sys.stderr)
-        st.error(f"Błąd czytania pliku zamówienia {name}: {e}")
-        return None
+        except Exception as e:
+            print("\n===== ORDER PARSE ERROR (XLSX ZIP/XML) =====", file=sys.stderr)
+            traceback.print_exc()
+            print("===== END ORDER PARSE ERROR =====\n", file=sys.stderr)
+            st.error(f"Błąd czytania pliku zamówienia {name}: {e}")
+            return None
 
     # ==== НОВАЯ ЛОГИКА: определяем структуру данных по art_col и data_start_row ====
     if df_o.shape[1] < 1:
@@ -336,8 +330,6 @@ def parse_order_file_to_df(fobj):
     structure = detect_order_structure(df_o)
     art_col = structure["art_col"]
     data_start_row = structure["data_start_row"]
-
-    print(f"[DEBUG] Plik: {name}, art_col={art_col}, data_start_row={data_start_row}")
 
     # Секция данных: всё, что ниже data_start_row
     df_data = df_o.iloc[data_start_row:, :].copy()
@@ -360,11 +352,10 @@ def parse_order_file_to_df(fobj):
         col_num = pd.to_numeric(col_raw.str.replace(",", "."), errors="coerce")
         non_null = col_num.dropna()
 
-        # Считаем колонку числовой, если хотя бы 3 числовых значения
-        # (и не меньше 5% строк), иначе считаем её текстовой.
-        if len(non_null) < 3 or len(non_null) < 0.05 * len(col_raw):
+        # Считаем колонку числовой, если есть хотя бы 1 числовое значение.
+        # Важно для файлов дозаказов (domówienia), где может быть заполнена всего 1 строка из 300.
+        if len(non_null) < 1:
             continue
-
 
         right_cols_indices.append(idx)
 
@@ -530,6 +521,7 @@ def aggregate_uploaded_orders(uploaded_orders):
     zwraca:
       - orders_all: wszystkie wiersze z plików (ARTIKELNR, ORDER_PALLETS, ORDER_QTY, SOURCE_FILE)
       - orders_agg: agregat po ARTIKELNR z podsumowaniem ilości
+      - valid_count: liczba poprawnie przetworzonych plików
 
     Buduje też mapę szczegółów po artykule: ile sztuk z każdego pliku,
     która później jest użyta do tooltipów w tabeli agregatu.
@@ -543,8 +535,9 @@ def aggregate_uploaded_orders(uploaded_orders):
             "orders_all": None,
             "orders_agg": None,
             "orders_detail_map": {},
+            "valid_count": 0,
         }
-        return None, None
+        return None, None, 0
 
     # prosty identyfikator zestawu plików: nazwy + rozmiar
     files_keys = tuple((getattr(f, "name", ""), getattr(f, "size", None)) for f in uploaded_orders)
@@ -554,9 +547,10 @@ def aggregate_uploaded_orders(uploaded_orders):
         cache.get("files_keys") == files_keys
         and cache.get("orders_agg") is not None
         and cache.get("orders_detail_map") is not None
+        and "valid_count" in cache
     ):
         # użyj już policzonych danych – bez ponownego parsowania
-        return cache["orders_all"], cache["orders_agg"]
+        return cache["orders_all"], cache["orders_agg"], cache["valid_count"]
 
     # jeśli pliki się zmieniły – licz od nowa
     orders_list = []
@@ -564,7 +558,11 @@ def aggregate_uploaded_orders(uploaded_orders):
     for f in uploaded_orders:
         name = getattr(f, "name", "uploaded")
         parsed = parse_order_file_to_df(f)
-        if parsed is None or parsed.empty:
+        if parsed is None:
+            continue
+        
+        if parsed.empty:
+            st.warning(f"Plik {name}: nie znaleziono zamówień (pusty wynik).")
             continue
 
         # dodaj info o źródle do wierszy
@@ -591,8 +589,9 @@ def aggregate_uploaded_orders(uploaded_orders):
             "orders_all": None,
             "orders_agg": None,
             "orders_detail_map": {},
+            "valid_count": 0,
         }
-        return None, None
+        return None, None, 0
 
     # wszystkie wiersze z plików
     orders_all = pd.concat(orders_list, ignore_index=True)
@@ -610,15 +609,18 @@ def aggregate_uploaded_orders(uploaded_orders):
     orders_agg["_sort_key"] = orders_agg["ARTIKELNR"].apply(natural_sort_key)
     orders_agg = orders_agg.sort_values("_sort_key").drop(columns=["_sort_key"]).reset_index(drop=True)
 
+    valid_count = len(orders_list)
+
     # zapisz do cache
     st.session_state["orders_cache"] = {
         "files_keys": files_keys,
         "orders_all": orders_all,
         "orders_agg": orders_agg,
         "orders_detail_map": orders_detail_map,
+        "valid_count": valid_count,
     }
 
-    return orders_all, orders_agg
+    return orders_all, orders_agg, valid_count
 
 def make_order_tooltip(art, orders_detail_map, manual_agg):
     lines = []
@@ -892,7 +894,10 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
         key="orders_uploader",
     )
 
-    orders_all, orders_agg_base = aggregate_uploaded_orders(uploaded_orders)
+    orders_all, orders_agg_base, valid_files_count = aggregate_uploaded_orders(uploaded_orders)
+
+    if uploaded_orders:
+        st.caption(f"Załadowano plików: {len(uploaded_orders)} | Poprawnie odczytano: {valid_files_count}")
 
     # Ręczne zamówienia
     render_manual_orders_editor(artikel_options)

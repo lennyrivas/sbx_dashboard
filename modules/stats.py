@@ -325,19 +325,37 @@ def render_stats_tab(df, STR):
     st.markdown("---")
 
     # 5. Zalegające palety (> 1 rok)
-    st.subheader("Palety składowane powyżej 1 roku")
+    col_h_old, col_sel_old, _ = st.columns([0.25, 0.15, 0.6])
+    with col_h_old:
+        st.subheader("Palety składowane powyżej")
+    with col_sel_old:
+        period_options = {
+            "5 lat": 365 * 5,
+            "3 lat": 365 * 3,
+            "1 roku": 365,
+            "6 miesięcy": 180
+        }
+        selected_period_label = st.selectbox(
+            "Wybierz okres",
+            options=list(period_options.keys()),
+            index=2,  # Default "1 rok"
+            label_visibility="collapsed",
+            key="stats_old_stock_period"
+        )
+
+    days_threshold = period_options[selected_period_label]
     
     stock_now = df_stats[df_stats["ZUSTAND"] == "401"].copy()
     if not stock_now.empty:
-        one_year_ago = now - timedelta(days=365)
-        old_stock = stock_now[stock_now["IN_DATE"] < one_year_ago].copy()
+        threshold_date = now - timedelta(days=days_threshold)
+        old_stock = stock_now[stock_now["IN_DATE"] < threshold_date].copy()
         
         count_old = len(old_stock)
         total_stock = len(stock_now)
         pct_old = (count_old / total_stock * 100) if total_stock > 0 else 0
         
         c_old1, c_old2 = st.columns(2)
-        c_old1.metric("Liczba starych palet (>1 rok)", f"{count_old}", f"{pct_old:.1f}% całości")
+        c_old1.metric(f"Liczba starych palet (>{selected_period_label})", f"{count_old}", f"{pct_old:.1f}% całości")
         
         if count_old > 0:
             with st.expander("Pokaż listę zalegających palet"):
