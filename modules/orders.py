@@ -693,6 +693,9 @@ def render_manual_orders_editor(artikel_options):
     """
     init_manual_orders()
 
+    if "manual_order_msg" in st.session_state:
+        st.success(st.session_state.pop("manual_order_msg"))
+
     st.subheader(STR["manual_orders"])
 
     # 1) Formularz jednej pozycji
@@ -801,10 +804,21 @@ def render_manual_orders_editor(artikel_options):
 
         col_del_one, col_space = st.columns([1, 3])
         with col_del_one:
-            if st.button("🗑 Usuń zaznaczone wiersze", key="manual_delete_selected_committed"):
-                mask_to_keep = ~edited["USUN"].fillna(False)
-                st.session_state.manual_orders_committed_df = committed[mask_to_keep].reset_index(drop=True)
-                st.success("Usunięto zaznaczone wiersze z ręcznych zamówień.")
+            def delete_selected_callback():
+                # Pobieramy zmiany bezpośrednio ze stanu edytora
+                editor_state = st.session_state.get("manual_committed_editor", {})
+                edited_rows = editor_state.get("edited_rows", {})
+                indices_to_remove = [int(k) for k, v in edited_rows.items() if v.get("USUN") is True]
+                
+                if indices_to_remove:
+                    df = st.session_state.manual_orders_committed_df
+                    # Filtrujemy indeksy, aby uniknąć błędów
+                    valid_indices = [i for i in indices_to_remove if i in df.index]
+                    if valid_indices:
+                        st.session_state.manual_orders_committed_df = df.drop(valid_indices).reset_index(drop=True)
+                        st.session_state["manual_order_msg"] = "Usunięto zaznaczone wiersze z ręcznych zamówień."
+            
+            st.button("🗑 Usuń zaznaczone wiersze", key="manual_delete_selected_committed", on_click=delete_selected_callback)
     else:
         st.info("Brak ręcznych zamówień w agregacie.")
 
