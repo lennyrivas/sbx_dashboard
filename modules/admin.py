@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from utils import load_admin_strategies
+from utils import load_packages_strategies
 
 def get_platz_priority(platz):
     """
@@ -112,7 +112,7 @@ def render_removal_tool(stock_df, orders_all, filename):
     empty_pids_arts = []
 
     # Ładowanie konfiguracji strategii (np. dla artykułów z priorytetem palet)
-    strategies_config = load_admin_strategies()
+    strategies_config = load_packages_strategies()
     pallet_priority_prefixes = strategies_config.get("pallet_priority", {}).get("prefixes", ["202671"])
 
     # Używamy formularza, aby zminimalizować przeładowania strony przy każdym kliknięciu
@@ -126,7 +126,7 @@ def render_removal_tool(stock_df, orders_all, filename):
             # Pobranie dostępnych palet dla artykułu
             art_stock = stock_active[stock_active["ARTIKELNR"] == art].copy()
             
-            # Specjalna logika dla artykułów zdefiniowanych w admin_strategies.json (priorytet liczby palet)
+            # Specjalna logika dla artykułów zdefiniowanych w packages_strategies.json (priorytet liczby palet)
             # Sprawdzamy, czy artykuł zaczyna się od jednego ze zdefiniowanych prefiksów
             is_pallet_priority = str(art).startswith(tuple(pallet_priority_prefixes))
             if is_pallet_priority:

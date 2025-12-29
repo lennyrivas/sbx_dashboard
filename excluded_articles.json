@@ -1,4 +1,5 @@
 {
+  "_description": "Plik zawiera listę artykułów wykluczonych z porównań (dokładne dopasowanie oraz prefiksy).",
   "exact": [
     "DAF K5",
     "DAF R-PALETTEN",

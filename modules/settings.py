@@ -8,6 +8,8 @@ from utils import (
     save_excluded_articles,
     load_packaging_config,
     save_packaging_config,
+    load_packages_strategies,
+    save_packages_strategies,
 )
 
 def init_settings():
@@ -87,3 +89,24 @@ def render_settings_tab():
             new_other = [x.strip() for x in other_input.splitlines() if x.strip()]
             if save_packaging_config(new_kartony, new_other):
                 st.success("✅ Konfiguracja opakowań zapisana pomyślnie")
+
+    # 3. Strategie
+    st.subheader("3. Strategie usuwania (Priorytet Palet)")
+    strategies = load_packages_strategies()
+    pallet_priority_prefixes = strategies.get("pallet_priority", {}).get("prefixes", [])
+    
+    col5, _ = st.columns(2)
+    with col5:
+        st.markdown("**Prefiksy (Priorytet Palet)**")
+        st.caption("Artykuły, dla których ważniejsza jest liczba palet niż ilość sztuk.")
+        strat_input = st.text_area(
+            label="Prefiksy strategii",
+            value="\n".join(pallet_priority_prefixes),
+            height=150,
+            key="strat_input",
+        )
+        
+    if st.button("⚙️ Zapisz strategie", type="primary"):
+        new_strat_prefixes = [x.strip() for x in strat_input.splitlines() if x.strip()]
+        if save_packages_strategies(new_strat_prefixes):
+            st.success("✅ Strategie zapisane pomyślnie")

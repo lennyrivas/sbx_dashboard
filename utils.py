@@ -4,7 +4,7 @@ import streamlit as st
 
 EXCLUDED_ARTICLES_FILE = "excluded_articles.json"
 PACKAGING_CONFIG_FILE = "packaging_config.json"
-ADMIN_STRATEGIES_FILE = "admin_strategies.json"
+PACKAGES_STRATEGIES_FILE = "packages_strategies.json"
 
 def load_excluded_articles():
     """Загружает список исключённых артикулов"""
@@ -22,7 +22,12 @@ def save_excluded_articles(exact_list, prefix_list):
     """Сохраняет исключённые артикулы"""
     try:
         with open(EXCLUDED_ARTICLES_FILE, "w", encoding="utf-8") as f:
-            json.dump({"exact": exact_list, "prefixes": prefix_list}, f, indent=2, ensure_ascii=False)
+            data = {
+                "_description": "Plik zawiera listę artykułów wykluczonych z porównań (dokładne dopasowanie oraz prefiksy).",
+                "exact": exact_list, 
+                "prefixes": prefix_list
+            }
+            json.dump(data, f, indent=2, ensure_ascii=False)
         return True
     except Exception as e:
         st.error(f"Błąd zapisywania excluded_articles.json: {e}")
@@ -44,30 +49,51 @@ def save_packaging_config(kartony_prefixes, other_prefixes):
     """Сохраняет конфигурацию упаковки"""
     try:
         with open(PACKAGING_CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump({
+            data = {
+                "_description": "Konfiguracja prefiksów dla kartonów i innych opakowań (używane głównie dla Mandanta 352).",
                 "kartony_prefixes": kartony_prefixes, 
                 "other_packaging_prefixes": other_prefixes
-            }, f, indent=2, ensure_ascii=False)
+            }
+            json.dump(data, f, indent=2, ensure_ascii=False)
         return True
     except Exception as e:
         st.error(f"Błąd zapisywania packaging_config.json: {e}")
         return False
 
-def load_admin_strategies():
+def load_packages_strategies():
     """
-    Загружает конфигурацию стратегий для админ-панели (admin_strategies.json).
+    Загружает конфигурацию стратегий для админ-панели (packages_strategies.json).
     Возвращает словарь с настройками.
     """
     default_strategies = {
         "pallet_priority": {"prefixes": ["202671"]}
     }
-    if os.path.isfile(ADMIN_STRATEGIES_FILE):
+    if os.path.isfile(PACKAGES_STRATEGIES_FILE):
         try:
-            with open(ADMIN_STRATEGIES_FILE, "r", encoding="utf-8") as f:
+            with open(PACKAGES_STRATEGIES_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            st.error(f"Błąd ładowania admin_strategies.json: {e}")
+            st.error(f"Błąd ładowania packages_strategies.json: {e}")
     return default_strategies
+
+def save_packages_strategies(pallet_priority_prefixes):
+    """Сохраняет стратегии (packages_strategies.json)"""
+    current = load_packages_strategies()
+    
+    # Aktualizacja prefiksów
+    if "pallet_priority" not in current:
+        current["pallet_priority"] = {"description": "", "prefixes": [], "examples": []}
+    
+    current["pallet_priority"]["prefixes"] = pallet_priority_prefixes
+    current["_description"] = "Konfiguracja strategii dobierania palet w narzędziu usuwania (np. priorytet liczby palet nad ilością sztuk)."
+
+    try:
+        with open(PACKAGES_STRATEGIES_FILE, "w", encoding="utf-8") as f:
+            json.dump(current, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        st.error(f"Błąd zapisywania packages_strategies.json: {e}")
+        return False
 
 def classify_pallet(
     artikelnr: str,

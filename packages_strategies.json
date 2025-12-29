@@ -1,0 +1,18 @@
+{
+  "_description": "Konfiguracja strategii dobierania palet w narzędziu usuwania (np. priorytet liczby palet nad ilością sztuk).",
+  "pallet_priority": {
+    "description": "Strategia 'Priorytet Palet': Używana dla artykułów, które w zamówieniu widnieją jako 1 sztuka = 1 paleta, ale fizycznie na magazynie mogą mieć inną ilość (np. 2, 3, 4 sztuki). Program zignoruje ilość sztuk i dobierze odpowiednią liczbę palet.",
+    "prefixes": [
+      "202671",
+      "5010",
+      "205010",
+      "904",
+      "20904",
+      "DAF K5"
+    ],
+    "examples": [
+      "202671 - Artykuły, które w zamówieniu są jako 1 szt., a na stanie mają np. 4 szt.",
+      "Dodaj tutaj inne prefiksy, jeśli pojawią się podobne artykuły."
+    ]
+  }
+}

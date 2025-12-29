@@ -1,4 +1,5 @@
 {
+  "_description": "Konfiguracja prefiksów dla kartonów i innych opakowań (używane głównie dla Mandanta 352).",
   "kartony_prefixes": [
     "830902",
     "830905",
