@@ -1,4 +1,5 @@
 py311_emb/
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
@@ -17,4 +18,9 @@ desktop.ini
 .env.local
 secrets.json
 config.ini
+
+# Streamlit session file
+session_state*.pkl
+
+# Streamlit secrets (hasła)
 .streamlit/secrets.toml

@@ -5,6 +5,53 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import os
+import time
+import glob
+
+def get_session_file_path(session_id):
+    """Generuje bezpieczną ścieżkę do pliku sesji na podstawie ID"""
+    # Usuwamy znaki, które mogłyby być niebezpieczne w nazwie pliku
+    safe_id = "".join([c for c in str(session_id) if c.isalnum() or c in "-_"])
+    return f"session_state_{safe_id}.pkl"
+
+def cleanup_old_sessions(max_age_hours=24):
+    """Usuwa pliki sesji starsze niż max_age_hours"""
+    try:
+        cutoff = time.time() - (max_age_hours * 3600)
+        for f in glob.glob("session_state_*.pkl"):
+            if os.path.getmtime(f) < cutoff:
+                os.remove(f)
+    except Exception:
+        pass
+
+def save_session_to_disk(df, session_id):
+    """Zapisuje DataFrame do pliku na dysku (trwałość po odświeżeniu)"""
+    cleanup_old_sessions() # Przy okazji zapisu czyścimy stare sesje
+    fpath = get_session_file_path(session_id)
+    try:
+        df.to_pickle(fpath)
+    except Exception:
+        pass
+
+def load_session_from_disk(session_id):
+    """Próbuje wczytać DataFrame z pliku sesji"""
+    fpath = get_session_file_path(session_id)
+    if os.path.exists(fpath):
+        try:
+            return pd.read_pickle(fpath)
+        except Exception:
+            return None
+    return None
+
+def clear_session_state(session_id):
+    """Usuwa zapisany plik sesji"""
+    fpath = get_session_file_path(session_id)
+    if os.path.exists(fpath):
+        try:
+            os.remove(fpath)
+        except Exception:
+            pass
 
 @st.cache_data
 def load_main_csv(uploaded_file):

@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+import uuid
 
 from modules.orders import render_orders_tab
 from modules.ui_strings import STR
@@ -14,7 +15,7 @@ from utils import (
 from modules.settings import render_settings_tab
 from modules.stock import render_stock_tab
 from modules.stats import render_stats_tab
-from modules.data_loader import load_main_csv
+from modules.data_loader import load_main_csv, save_session_to_disk, load_session_from_disk, clear_session_state
 from modules.filters import render_analysis_filters
 from modules.admin import render_admin_tab
 
@@ -31,6 +32,14 @@ st.set_page_config(
 st.title(STR["title"])
 
 # ==============================
+# Zarządzanie sesją użytkownika (UUID)
+# ==============================
+if "session_id" not in st.query_params:
+    st.query_params["session_id"] = str(uuid.uuid4())
+
+session_id = st.query_params["session_id"]
+
+# ==============================
 # Загрузка файла и подготовка df
 # ==============================
 uploaded = st.sidebar.file_uploader(
@@ -39,12 +48,34 @@ uploaded = st.sidebar.file_uploader(
     key="main_csv",
 )
 
-if uploaded is None:
-    st.info(STR["no_file"])
-    st.stop()
+df = None
 
-df = load_main_csv(uploaded)
+# 1. Próba załadowania z uploadu (priorytet)
+if uploaded is not None:
+    df = load_main_csv(uploaded)
+    if df is not None:
+        # Zapisujemy sesję na dysk, aby przetrwała odświeżenie strony
+        save_session_to_disk(df, session_id)
+        if "restored_df" in st.session_state:
+            del st.session_state["restored_df"]
+
+# 2. Jeśli brak uploadu, próba przywrócenia sesji z dysku
 if df is None:
+    if "restored_df" not in st.session_state:
+        saved_df = load_session_from_disk(session_id)
+        if saved_df is not None:
+            st.session_state["restored_df"] = saved_df
+    
+    if "restored_df" in st.session_state:
+        df = st.session_state["restored_df"]
+        st.sidebar.warning("⚠️ Przywrócono dane z ostatniej sesji.")
+        if st.sidebar.button("🗑️ Wyczyść dane", key="clear_session_btn"):
+            clear_session_state(session_id)
+            del st.session_state["restored_df"]
+            st.rerun()
+
+if df is None:
+    st.info(STR["no_file"])
     st.stop()
 
 # --- Admin Login (Sidebar) ---
