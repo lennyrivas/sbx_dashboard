@@ -63,7 +63,9 @@ tabs_labels = [
     "⚙️ Ustawienia",
 ]
 
-if admin_password == "admin":
+# Bezpieczne sprawdzanie hasła przez st.secrets
+# Hasło nie jest przechowywane w kodzie na GitHubie
+if "ADMIN_PASSWORD" in st.secrets and admin_password == st.secrets["ADMIN_PASSWORD"]:
     tabs_labels.append("🔐 Admin")
 
 tabs = st.tabs(tabs_labels)

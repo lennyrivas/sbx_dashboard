@@ -17,3 +17,4 @@ desktop.ini
 .env.local
 secrets.json
 config.ini
+.streamlit/secrets.toml
