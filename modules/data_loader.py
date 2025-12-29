@@ -15,6 +15,10 @@ def load_main_csv(uploaded_file):
     if uploaded_file is None:
         return None
     
+    # WAŻNE: Resetujemy wskaźnik pliku na początek przed odczytem.
+    # Zapobiega to błędom przy ponownym użyciu tego samego obiektu pliku (np. przy odświeżeniu cache).
+    uploaded_file.seek(0)
+
     try:
         # Попытка UTF-8
         if uploaded_file.name.lower().endswith(('.csv', '.txt')):

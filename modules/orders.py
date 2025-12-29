@@ -192,6 +192,7 @@ def parse_order_file_to_df(fobj):
 
     # CSV / TXT – на будущее
     if name.lower().endswith((".csv", ".txt")):
+        fobj.seek(0)
         try:
             df_o = pd.read_csv(
                 fobj,
