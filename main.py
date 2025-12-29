@@ -52,11 +52,8 @@ with st.sidebar:
     st.markdown("---")
     with st.expander("🔐 Admin"):
         with st.form("admin_login_form"):
-            col_pass, col_btn = st.columns([2, 1])
-            with col_pass:
-                admin_password = st.text_input("Hasło", type="password", key="admin_pass", label_visibility="collapsed", placeholder="Hasło")
-            with col_btn:
-                st.form_submit_button("Login")
+            admin_password = st.text_input("Hasło", type="password", key="admin_pass", label_visibility="collapsed", placeholder="Hasło")
+            st.form_submit_button("Login", use_container_width=True)
 
 # ==============================
 # Вкладки
