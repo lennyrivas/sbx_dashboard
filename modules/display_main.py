@@ -190,7 +190,6 @@ def show_main_display(filtered_df, deleted_df, STR):
             st.dataframe(
                 summary.head(10),
                 use_container_width=True,
-                height=350,
                 hide_index=True
             )
         else:
