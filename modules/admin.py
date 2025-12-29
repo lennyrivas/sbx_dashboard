@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+from utils import load_admin_strategies
 
 def get_platz_priority(platz):
     """
@@ -15,7 +16,6 @@ def get_platz_priority(platz):
     return 2
 
 def render_admin_tab(df):
-    st.header("🔐 Panel Administratora")
     
     # --- OPTYMALIZACJA: Inicjalizacja roboczej bazy stanów (tylko ZUSTAND 401) ---
     # Tworzymy unikalny podpis danych (np. rozmiar), aby wykryć zmianę pliku źródłowego
@@ -52,25 +52,6 @@ def render_admin_tab(df):
         # Przekazujemy naszą zoptymalizowaną bazę ze stanu sesji
         render_removal_tool(st.session_state["admin_stock_df"], orders_all, selected_file)
 
-    # --- Narzędzia deweloperskie (na dole) ---
-    st.markdown("---")
-    with st.expander("🛠 Narzędzia deweloperskie i podgląd", expanded=False):
-        col_a1, col_a2 = st.columns(2)
-        with col_a1:
-            st.subheader("Zarządzanie aplikacją")
-            if st.button("🧹 Wyczyść pamięć podręczną (st.cache_data)", type="primary"):
-                st.cache_data.clear()
-                st.success("Pamięć podręczna została wyczyszczona.")
-                
-            st.subheader("Stan sesji")
-            session_summary = {k: str(v)[:200] + "..." if len(str(v)) > 200 else v for k, v in st.session_state.items()}
-            st.json(session_summary)
-
-        with col_a2:
-            st.subheader("Podgląd danych (Top 100)")
-            st.dataframe(df.head(100), use_container_width=True)
-            st.write(f"Wymiary: {df.shape}")
-
 
 def render_removal_tool(stock_df, orders_all, filename):
     # CSS hack: szersze tagi w multiselect (próba układu 2-kolumnowego / pełna szerokość)
@@ -79,17 +60,22 @@ def render_removal_tool(stock_df, orders_all, filename):
     <style>
     /* Zwiększenie czytelności tagów w multiselect */
     .stMultiSelect span[data-baseweb="tag"] {
-        min-width: 30% !important;
+        min-width: 100% !important;
         max-width: 100% !important;
-        white-space: normal !important;
+        white-space: nowrap !important;
         display: flex !important;
         justify-content: flex-start !important;
     }
     .stMultiSelect span[data-baseweb="tag"] span {
-        white-space: normal !important;
+        white-space: nowrap !important;
+        max-width: 100% !important;
     }
     </style>
     """, unsafe_allow_html=True)
+
+    # Wyświetlanie komunikatu o sukcesie (jeśli istnieje w sesji)
+    if "removal_msg" in st.session_state:
+        st.success(st.session_state.pop("removal_msg"))
 
     # Filtrowanie danych zamówienia
     order_data = orders_all[orders_all["SOURCE_FILE"] == filename].copy()
@@ -125,6 +111,10 @@ def render_removal_tool(stock_df, orders_all, filename):
     summary_rows = []
     empty_pids_arts = []
 
+    # Ładowanie konfiguracji strategii (np. dla artykułów z priorytetem palet)
+    strategies_config = load_admin_strategies()
+    pallet_priority_prefixes = strategies_config.get("pallet_priority", {}).get("prefixes", ["202671"])
+
     # Używamy formularza, aby zminimalizować przeładowania strony przy każdym kliknięciu
     with st.form("removal_form"):
         for index, row in order_agg.iterrows():
@@ -136,19 +126,68 @@ def render_removal_tool(stock_df, orders_all, filename):
             # Pobranie dostępnych palet dla artykułu
             art_stock = stock_active[stock_active["ARTIKELNR"] == art].copy()
             
-            # Logika sortowania:
-            # 1. Dopasowanie ilości (+/- 10 sztuk) - Najpierw pasujące
-            # 2. Priorytet miejsca (WE/BL -> 2/02 -> inne) - Rosnąco
-            # 3. Data przyjęcia (IN_DATE) - Najstarsze (FIFO)
-            art_stock["Is_Match"] = art_stock["QUANTITY"].apply(lambda q: abs(q - qty_per_pal) <= 10)
-            
-            art_stock = art_stock.sort_values(
-                by=["Is_Match", "PLATZ_PRIORITY", "IN_DATE"], 
-                ascending=[False, True, True]
-            )
+            # Specjalna logika dla artykułów zdefiniowanych w admin_strategies.json (priorytet liczby palet)
+            # Sprawdzamy, czy artykuł zaczyna się od jednego ze zdefiniowanych prefiksów
+            is_pallet_priority = str(art).startswith(tuple(pallet_priority_prefixes))
+            if is_pallet_priority:
+                df_special = art_stock.sort_values(
+                    by=["PLATZ_PRIORITY", "IN_DATE"], 
+                    ascending=[True, True]
+                )
+                suggested_pids = df_special["LHMNR"].head(pallets_needed).tolist()
+            else:
+                # --- STRATEGIA 1: Dopasowanie strukturalne (wg ilości na palecie) ---
+                # Próbujemy znaleźć palety pasujące idealnie do "sztuk na paletę" z zamówienia
+                art_stock["Qty_Diff"] = art_stock["QUANTITY"].apply(lambda q: abs(q - qty_per_pal))
+                
+                df_strat1 = art_stock.sort_values(
+                    by=["Qty_Diff", "PLATZ_PRIORITY", "IN_DATE"], 
+                    ascending=[True, True, True]
+                )
+                pids_strat1 = df_strat1["LHMNR"].head(pallets_needed).tolist()
+                qty_strat1 = df_strat1[df_strat1["LHMNR"].isin(pids_strat1)]["QUANTITY"].sum()
+                diff_strat1 = abs(qty_strat1 - qty_needed)
 
-            # Automatyczny wybór PID (bierzemy tyle, ile potrzeba w zamówieniu)
-            suggested_pids = art_stock["LHMNR"].head(pallets_needed).tolist()
+                # --- STRATEGIA 2: Dopasowanie ilościowe (FIFO / Priorytet miejsca) ---
+                # Ignorujemy podział na palety, próbujemy uzbierać zadaną ilość sztuk (np. 11 palet po 1 sztuce zamiast 1 po 11)
+                df_strat2 = art_stock.sort_values(
+                    by=["PLATZ_PRIORITY", "IN_DATE"], 
+                    ascending=[True, True]
+                )
+                
+                pids_strat2 = []
+                best_strat2_diff = float('inf')
+                
+                if not df_strat2.empty and qty_needed > 0:
+                    temp_pids = []
+                    temp_qty = 0
+                    
+                    for _, row_s in df_strat2.iterrows():
+                        temp_pids.append(row_s["LHMNR"])
+                        temp_qty += row_s["QUANTITY"]
+                        
+                        curr_diff = abs(temp_qty - qty_needed)
+                        
+                        # Zapamiętujemy najlepszy zestaw (najbliższy ilościowo)
+                        if curr_diff < best_strat2_diff:
+                            best_strat2_diff = curr_diff
+                            pids_strat2 = list(temp_pids)
+                        
+                        # Jeśli już uzbieraliśmy wystarczająco, przerywamy (nie bierzemy nadmiarowych palet)
+                        if temp_qty >= qty_needed:
+                            break
+                
+                # Jeśli strategia 2 nic nie wybrała (np. brak towaru), ustawiamy błąd na max
+                if not pids_strat2:
+                    best_strat2_diff = qty_needed
+
+                # --- DECYZJA ---
+                # Jeśli Strategia 2 daje lepsze dopasowanie ilościowe (mniejszy błąd), wybieramy ją.
+                # W przeciwnym razie (remis lub Strategia 1 lepsza) trzymamy się struktury zamówienia.
+                if best_strat2_diff < diff_strat1:
+                    suggested_pids = pids_strat2
+                else:
+                    suggested_pids = pids_strat1
             
             # Wyświetlanie wiersza
             with st.container():
@@ -203,7 +242,7 @@ def render_removal_tool(stock_df, orders_all, filename):
                     empty_pids_arts.append(art)
                 
                 summary_rows.append({
-                    "Artykuł": art,
+                    "Artykuł": f"*{art}" if is_pallet_priority else art,
                     "Zamówiono (szt)": int(qty_needed),
                     "Wybrano (szt)": int(sel_qty),
                     "Różnica (szt)": int(sel_qty - qty_needed)
@@ -232,6 +271,7 @@ def render_removal_tool(stock_df, orders_all, filename):
                 st.dataframe(df_diff, use_container_width=True, hide_index=True)
             else:
                 st.success("Brak różnic ilościowych!")
+            st.caption("\\* - Artykuł obsługiwany strategią 'Priorytet Palet' (ignorowanie ilości sztuk)")
 
     st.markdown("### 📋 Wynik")
     if final_pids:
@@ -253,21 +293,18 @@ def render_removal_tool(stock_df, orders_all, filename):
                 </style>
                 """, unsafe_allow_html=True)
                 st.code("\n".join(final_pids), language="text")
+                st.caption("✅ Skopiuj listę (ikona w rogu), a następnie zatwierdź usunięcie.")
         
         with col_btn:
             # Przycisk zatwierdzania usunięcia
-            if st.button("✅ Zatwierdź usunięcie (Ukryj te PIDy)", type="primary", help="Kliknij po skopiowaniu, aby oznaczyć te palety jako usunięte w bieżącej sesji."):
-                # 1. Dodajemy do listy usuniętych (dla historii/logów)
+            def confirm_removal():
                 st.session_state["removed_pids"].update(final_pids)
-                
-                # 2. Fizycznie usuwamy wiersze z naszej roboczej bazy danych w sesji
-                # Dzięki temu przy kolejnym odświeżeniu nie musimy nic filtrować - tych palet już tam nie będzie.
                 st.session_state["admin_stock_df"] = st.session_state["admin_stock_df"][~st.session_state["admin_stock_df"]["LHMNR"].isin(final_pids)]
-                
-                st.success(f"Oznaczono {len(final_pids)} palet jako usunięte. Nie będą one sugerowane przy kolejnych analizach.")
-                
-                # DEBUG: Komunikat przed rerun
-                st.toast("🐞 ADMIN: Wywołano `st.rerun()`")
-                st.rerun()
+                st.session_state["removal_msg"] = f"Oznaczono {len(final_pids)} palet jako usunięte. Nie będą one sugerowane przy kolejnych analizach."
+
+            st.button("✅ Zatwierdź usunięcie (Ukryj te PIDy)", type="primary", help="Kliknij po skopiowaniu, aby oznaczyć te palety jako usunięte w bieżącej sesji.", on_click=confirm_removal)
+            
+        if submit_btn:
+            st.toast("Lista PID została wygenerowana. Skopiuj dane i zatwierdź usunięcie.", icon="📋")
     else:
         st.info("Brak wybranych palet.")

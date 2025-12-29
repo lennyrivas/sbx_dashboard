@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import time
 
 from modules.orders import render_orders_tab
 from modules.ui_strings import STR
@@ -21,11 +20,6 @@ from modules.admin import render_admin_tab
 
 
 # ==============================
-# DEBUG: Czas startu skryptu
-# ==============================
-script_start_time = time.time()
-
-# ==============================
 # Основная конфигурация страницы
 # ==============================
 st.set_page_config(
@@ -37,17 +31,8 @@ st.set_page_config(
 st.title(STR["title"])
 
 # ==============================
-# DEBUG: Panel w sidebarze
-# ==============================
-st.sidebar.title("🐞 Debug Info")
-run_timestamp = datetime.now().strftime("%H:%M:%S.%f")
-st.sidebar.info(f"Script Run at: **{run_timestamp}**")
-
-
-# ==============================
 # Загрузка файла и подготовка df
 # ==============================
-load_start_time = time.time()
 uploaded = st.sidebar.file_uploader(
     STR["upload_csv"],
     type=["csv", "txt"],
@@ -61,14 +46,17 @@ if uploaded is None:
 df = load_main_csv(uploaded)
 if df is None:
     st.stop()
-load_end_time = time.time()
-st.sidebar.info(f"🕒 `load_main_csv`: **{load_end_time - load_start_time:.4f}s**")
 
 # --- Admin Login (Sidebar) ---
 with st.sidebar:
     st.markdown("---")
     with st.expander("🔐 Admin"):
-        admin_password = st.text_input("Hasło", type="password", key="admin_pass")
+        with st.form("admin_login_form"):
+            col_pass, col_btn = st.columns([2, 1])
+            with col_pass:
+                admin_password = st.text_input("Hasło", type="password", key="admin_pass", label_visibility="collapsed", placeholder="Hasło")
+            with col_btn:
+                st.form_submit_button("Login")
 
 # ==============================
 # Вкладки
@@ -87,7 +75,7 @@ except Exception:
     correct_password = "admin"
 
 if admin_password == correct_password:
-    tabs_labels.append("🔐 Admin")
+    tabs_labels.append("🔐 Usuwanie palet")
 
 tabs = st.tabs(tabs_labels)
 
@@ -97,7 +85,6 @@ tab_stats = tabs[2]
 tab_settings = tabs[3]
 
 with tab_analysis:
-    tab_analysis_start = time.time()
     st.header("⚖️ Analiza dodanych i usuniętych palet")
 
     # 👉 Фильтры теперь рисуются здесь, в этой вкладке
@@ -167,25 +154,17 @@ with tab_analysis:
         date_end=date_end,
         selected_mandant=selected_mandant,
     )
-    tab_analysis_end = time.time()
-    st.sidebar.info(f"🕒 `Tab 'Analiza'`: **{tab_analysis_end - tab_analysis_start:.4f}s**")
 
 with tab_stock:
-    tab_stock_start = time.time()
     render_stock_tab(
         df,                # полный очищенный DataFrame
         selected_mandant,  # текущий mandant из фильтров анализа
         selected_artikel,  # текущий список artykułów (можно потом отделить)
         STR,
     )
-    tab_stock_end = time.time()
-    st.sidebar.info(f"🕒 `Tab 'Stany'`: **{tab_stock_end - tab_stock_start:.4f}s**")
 
 with tab_stats:
-    tab_stats_start = time.time()
     render_stats_tab(df, STR)
-    tab_stats_end = time.time()
-    st.sidebar.info(f"🕒 `Tab 'Statystyka'`: **{tab_stats_end - tab_stats_start:.4f}s**")
 
 
 with tab_settings:
@@ -194,11 +173,4 @@ with tab_settings:
 
 if len(tabs) > 4:
     with tabs[4]:
-        tab_admin_start = time.time()
         render_admin_tab(df)
-        tab_admin_end = time.time()
-        st.sidebar.info(f"🕒 `Tab 'Admin'`: **{tab_admin_end - tab_admin_start:.4f}s**")
-
-script_end_time = time.time()
-st.sidebar.info(f"🕒 `Script Total`: **{script_end_time - script_start_time:.4f}s**")
-

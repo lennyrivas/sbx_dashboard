@@ -6,7 +6,6 @@ from modules.ui_strings import STR
 from datetime import datetime, timedelta
 import pandas as pd
 from utils import load_packaging_config
-import time
 
 def render_sidebar_filters(df):
     """
@@ -118,14 +117,14 @@ def apply_filters(df, mandant, artikel, mode, date_start, date_end):
 
 
 
-def render_debug_info(mandant, artikel, date_field, date_start, date_end, filtered_count):
-    """Отображает информацию о фильтрах в sidebar БЕЗ заголовка"""
-    st.sidebar.markdown("---")
-    st.sidebar.write(f"**Mandant:** {mandant}")
-    st.sidebar.write(f"**Artykuły:** {len(artikel) if artikel else 0}")
-    st.sidebar.write(f"**Data field:** {date_field}")
-    st.sidebar.write(f"**Date range:** {date_start.date()} - {date_end.date()}")
-    st.sidebar.write(f"**Wynik filtracji:** {filtered_count:,} wierszy")
+# def render_debug_info(mandant, artikel, date_field, date_start, date_end, filtered_count):
+#     """Отображает информацию о фильтрах в sidebar БЕЗ заголовка"""
+#     st.sidebar.markdown("---")
+#     st.sidebar.write(f"**Mandant:** {mandant}")
+#     st.sidebar.write(f"**Artykuły:** {len(artikel) if artikel else 0}")
+#     st.sidebar.write(f"**Data field:** {date_field}")
+#     st.sidebar.write(f"**Date range:** {date_start.date()} - {date_end.date()}")
+#     st.sidebar.write(f"**Wynik filtracji:** {filtered_count:,} wierszy")
 
 
 def render_analysis_filters(df: pd.DataFrame):
@@ -245,7 +244,6 @@ def render_analysis_filters(df: pd.DataFrame):
         )
 
     # Maski filtrów
-    filter_start_time = time.time()
     mask_global = (df["MANDANT"] == selected_mandant)
 
     # Filtr po dacie (OUT_DATE lub IN_DATE)
@@ -289,8 +287,6 @@ def render_analysis_filters(df: pd.DataFrame):
 
     filtered_pallets_df = df[mask_view].copy()
     
-    filter_end_time = time.time()
-    st.sidebar.info(f"🕒 `render_analysis_filters` (filtering): **{filter_end_time - filter_start_time:.4f}s**")
 
     # Здесь НЕ пересчитываем IS_DELETED – он уже посчитан при загрузке df
     # и основан на ZUSTAND != 401.

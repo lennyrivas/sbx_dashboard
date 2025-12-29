@@ -4,6 +4,7 @@ import streamlit as st
 
 EXCLUDED_ARTICLES_FILE = "excluded_articles.json"
 PACKAGING_CONFIG_FILE = "packaging_config.json"
+ADMIN_STRATEGIES_FILE = "admin_strategies.json"
 
 def load_excluded_articles():
     """Загружает список исключённых артикулов"""
@@ -51,6 +52,22 @@ def save_packaging_config(kartony_prefixes, other_prefixes):
     except Exception as e:
         st.error(f"Błąd zapisywania packaging_config.json: {e}")
         return False
+
+def load_admin_strategies():
+    """
+    Загружает конфигурацию стратегий для админ-панели (admin_strategies.json).
+    Возвращает словарь с настройками.
+    """
+    default_strategies = {
+        "pallet_priority": {"prefixes": ["202671"]}
+    }
+    if os.path.isfile(ADMIN_STRATEGIES_FILE):
+        try:
+            with open(ADMIN_STRATEGIES_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            st.error(f"Błąd ładowania admin_strategies.json: {e}")
+    return default_strategies
 
 def classify_pallet(
     artikelnr: str,
