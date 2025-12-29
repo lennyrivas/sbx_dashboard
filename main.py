@@ -34,10 +34,19 @@ st.title(STR["title"])
 # ==============================
 # Zarządzanie sesją użytkownika (UUID)
 # ==============================
-if "session_id" not in st.query_params:
-    st.query_params["session_id"] = str(uuid.uuid4())
-
-session_id = st.query_params["session_id"]
+try:
+    if "session_id" not in st.query_params:
+        st.query_params["session_id"] = str(uuid.uuid4())
+    session_id = st.query_params["session_id"]
+except AttributeError:
+    # Fallback dla starszych wersji Streamlit (< 1.30.0)
+    params = st.experimental_get_query_params()
+    if "session_id" not in params:
+        session_id = str(uuid.uuid4())
+        params["session_id"] = session_id
+        st.experimental_set_query_params(**params)
+    else:
+        session_id = params["session_id"][0]
 
 # ==============================
 # Загрузка файла и подготовка df
