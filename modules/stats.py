@@ -191,14 +191,32 @@ def render_stats_tab(df, STR):
         mask_top_out = mask_out_valid & (df_stats["OUT_DATE"] >= cutoff_date)
         top_out = df_stats[mask_top_out]["ARTIKELNR"].value_counts().head(5).reset_index()
         top_out.columns = ["Artykuł", "Liczba palet"]
-        st.dataframe(top_out, use_container_width=True, hide_index=True)
+        st.dataframe(
+            top_out,
+            use_container_width=True,
+            hide_index=True,
+            height=250,
+            column_config={
+                "Artykuł": st.column_config.TextColumn(width="medium"),
+                "Liczba palet": st.column_config.NumberColumn(width="small"),
+            }
+        )
 
     with col_top_in:
         st.markdown("**Najczęściej przyjmowane (Top 5)**")
         mask_top_in = df_stats["IN_DATE"] >= cutoff_date
         top_in = df_stats[mask_top_in]["ARTIKELNR"].value_counts().head(5).reset_index()
         top_in.columns = ["Artykuł", "Liczba palet"]
-        st.dataframe(top_in, use_container_width=True, hide_index=True)
+        st.dataframe(
+            top_in,
+            use_container_width=True,
+            hide_index=True,
+            height=250,
+            column_config={
+                "Artykuł": st.column_config.TextColumn(width="medium"),
+                "Liczba palet": st.column_config.NumberColumn(width="small"),
+            }
+        )
 
     st.markdown("---")
 
