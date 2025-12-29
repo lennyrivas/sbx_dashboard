@@ -47,17 +47,31 @@ df = load_main_csv(uploaded)
 if df is None:
     st.stop()
 
+# --- Admin Login (Sidebar) ---
+with st.sidebar:
+    st.markdown("---")
+    with st.expander("🔐 Admin"):
+        admin_password = st.text_input("Hasło", type="password", key="admin_pass")
+
 # ==============================
 # Вкладки
 # ==============================
-tab_analysis, tab_stock, tab_stats, tab_settings = st.tabs(
-    [
-        "Analiza zamówień vs palet",
-        "Stany magazynowe",
-        "📊 Statystyka",
-        "⚙️ Ustawienia",
-    ]
-)
+tabs_labels = [
+    "Analiza zamówień vs palet",
+    "Stany magazynowe",
+    "📊 Statystyka",
+    "⚙️ Ustawienia",
+]
+
+if admin_password == "admin":
+    tabs_labels.append("🔐 Admin")
+
+tabs = st.tabs(tabs_labels)
+
+tab_analysis = tabs[0]
+tab_stock = tabs[1]
+tab_stats = tabs[2]
+tab_settings = tabs[3]
 
 with tab_analysis:
     st.header("⚖️ Analiza dodanych i usuniętych palet")
@@ -144,3 +158,9 @@ with tab_stats:
 with tab_settings:
     # Используем функцию из модуля
     render_settings_tab()
+
+if len(tabs) > 4:
+    with tabs[4]:
+        st.header("🔐 Ukryty Panel Administratora")
+        st.info("Witaj w panelu administratora!")
+        st.write("Tutaj możesz dodać funkcje administracyjne.")
