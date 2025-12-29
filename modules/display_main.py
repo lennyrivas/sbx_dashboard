@@ -5,6 +5,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from modules.ui_strings import STR
+from utils import classify_pallet, load_packaging_config
 
 
 def show_main_display(filtered_df, deleted_df, STR):
@@ -89,9 +90,8 @@ def show_main_display(filtered_df, deleted_df, STR):
 
     with col_right:
         if current_mode == mode_deleted and mandant == "352" and len(deleted_df) > 0:
-            cartons_list = st.session_state.get("cartons", [])
+            cartons_list, other_list = load_packaging_config()
             pallets_list = st.session_state.get("pallets_frames", [])
-            other_list = st.session_state.get("other_packaging", [])
 
             deleted_df_classified = deleted_df.copy()
             deleted_df_classified["PALLET_TYPE"] = deleted_df_classified["ARTIKELNR"].apply(
