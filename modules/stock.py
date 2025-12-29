@@ -8,6 +8,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from modules.ui_strings import STR
 from utils import load_packaging_config, classify_pallet
+import time
 
 
 # --- Логика фильтрации ---
@@ -26,7 +27,7 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date, debug
         st.info(f"**START**: Całkowita liczba wierszy w pliku: {len(df)}")
 
     # 🎯 ШАГ 1: Базовый фильтр mandant
-    df_filtered = df[df["MANDANT"].astype(str) == selected_mandant].copy()
+    df_filtered = df[df["MANDANT"] == selected_mandant].copy()
     
     if debug:
         st.write(f"1️⃣ **Filtr Mandant ({selected_mandant})**: {len(df_filtered)} wierszy")
@@ -59,6 +60,7 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date, debug
     kartony_prefixes, other_packaging_prefixes = load_packaging_config()
     pallets_frames_prefixes = st.session_state.get("pallets_frames", [])
     
+    apply_start_time = time.time()
     df_stock["Opakowanie"] = df_stock.apply(
         lambda row: classify_pallet(
             row["ARTIKELNR"], 
@@ -68,6 +70,8 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date, debug
         ),
         axis=1
     )
+    apply_end_time = time.time()
+    st.sidebar.info(f"🕒 `filter_stock_df` (.apply): **{apply_end_time - apply_start_time:.4f}s**")
     
     return df_stock
 
@@ -144,70 +148,77 @@ def build_stock_history(
 # --- Рендеринг вкладки ---
 
 def render_stock_tab(df, selected_mandant, selected_artikel, STR):
-    st.header(STR["stock_tab"])
-    st.markdown("---")
-    st.subheader("🔍 Filtry dla stanów magazynowych")
+    render_start_time = time.time()
+    try:
+        st.header(STR["stock_tab"])
+        st.markdown("---")
+        st.subheader("🔍 Filtry dla stanów magazynowych")
 
-    col_stock_mandant, col_stock_date, col_stock_artikel = st.columns([1, 1.5, 2])
+        col_stock_mandant, col_stock_date, col_stock_artikel = st.columns([1, 1.5, 2])
 
-    with col_stock_mandant:
-        available_mandants_stock = sorted(df["MANDANT"].astype(str).unique())
-        selected_mandant_stock = st.selectbox("Mandant", options=available_mandants_stock, index=0, key="stock_mandant_filter")
+        with col_stock_mandant:
+            available_mandants_stock = sorted(df["MANDANT"].unique())
+            selected_mandant_stock = st.selectbox("Mandant", options=available_mandants_stock, index=0, key="stock_mandant_filter")
 
-    with col_stock_date:
-        yesterday = (datetime.now() - timedelta(days=1)).date()
-        stock_date = st.date_input("Data sprawdzenia stanów", value=yesterday, max_value=datetime.now().date(), key="stock_date_only")
-        selected_date_stock = datetime.combine(stock_date, datetime.min.time())
+        with col_stock_date:
+            yesterday = (datetime.now() - timedelta(days=1)).date()
+            stock_date = st.date_input("Data sprawdzenia stanów", value=yesterday, max_value=datetime.now().date(), key="stock_date_only")
+            selected_date_stock = datetime.combine(stock_date, datetime.min.time())
 
-    with col_stock_artikel:
-        artikel_stock_options = sorted(df[df["MANDANT"].astype(str) == selected_mandant_stock]["ARTIKELNR"].dropna().unique().tolist())
-        selected_artikel_stock = st.multiselect("Artykuły", options=artikel_stock_options, default=[], key="stock_artikel_filter")
+        with col_stock_artikel:
+            mask_mandant = df["MANDANT"] == selected_mandant_stock
+            artikel_stock_options = sorted(df.loc[mask_mandant, "ARTIKELNR"].dropna().unique().tolist())
+            selected_artikel_stock = st.multiselect("Artykuły", options=artikel_stock_options, default=[], key="stock_artikel_filter")
 
-    if str(selected_mandant_stock) == "351":
-        show_cartons_only = False
-    else:
-        show_cartons_only = st.checkbox("📦 Pokaż tylko kartony", key="stock_cartons_only_new")
+        if selected_mandant_stock == "351":
+            show_cartons_only = False
+        else:
+            show_cartons_only = st.checkbox("📦 Pokaż tylko kartony", key="stock_cartons_only_new")
 
-    debug_mode = st.checkbox("🐞 Tryb debugowania (pokaż szczegóły filtracji)", value=False)
-    st.markdown("---")
+        debug_mode = st.checkbox("🐞 Tryb debugowania (pokaż szczegóły filtracji)", value=False)
+        st.markdown("---")
 
-    df_stock = filter_stock_df(df, selected_mandant_stock, selected_artikel_stock, selected_date_stock, debug=debug_mode)
+        df_stock = filter_stock_df(df, selected_mandant_stock, selected_artikel_stock, selected_date_stock, debug=debug_mode)
 
-    if df_stock.empty:
-        st.warning(f"Brak palet na magazynie.")
-        return
+        if df_stock.empty:
+            st.warning(f"Brak palet na magazynie.")
+            return
 
-    if show_cartons_only:
-        df_stock = df_stock[df_stock["Opakowanie"] == "Kartony"].copy()
+        if show_cartons_only:
+            df_stock = df_stock[df_stock["Opakowanie"] == "Kartony"].copy()
+            
+        total_pallets = len(df_stock)
+
+        if selected_mandant_stock == "351":
+            m1, _, _, _ = st.columns(4)
+            m1.metric(STR["metric_total_pallets"], f"{total_pallets:,}")
+        else:
+            cartons_count = df_stock[df_stock["Opakowanie"] == "Kartony"].shape[0]
+            other_pkg_count = df_stock[df_stock["Opakowanie"] != "Kartony"].shape[0]
+            m1, m2, m3, _ = st.columns(4)
+            m1.metric(STR["metric_total_pallets"], f"{total_pallets:,}")
+            m2.metric(STR["metric_cartons"], f"{cartons_count:,}")
+            m3.metric(STR["metric_other_pkg"], f"{other_pkg_count:,}")
         
-    total_pallets = len(df_stock)
+        st.markdown("---")
 
-    if str(selected_mandant_stock) == "351":
-        m1, _, _, _ = st.columns(4)
-        m1.metric(STR["metric_total_pallets"], f"{total_pallets:,}")
-    else:
-        cartons_count = df_stock[df_stock["Opakowanie"] == "Kartony"].shape[0]
-        other_pkg_count = df_stock[df_stock["Opakowanie"] != "Kartony"].shape[0]
-        m1, m2, m3, _ = st.columns(4)
-        m1.metric(STR["metric_total_pallets"], f"{total_pallets:,}")
-        m2.metric(STR["metric_cartons"], f"{cartons_count:,}")
-        m3.metric(STR["metric_other_pkg"], f"{other_pkg_count:,}")
-    
-    st.markdown("---")
+        with st.expander(f"**{STR['stock_table_pids']}** ({total_pallets:,} palet)"):
+            cols_pids = {"ARTIKELNR": "Artykuł", "ARTBEZ1": "Opis artykułu", "QUANTITY": "Ilość na palecie", "LHMNR": "PID", "PLATZ": "Miejsce"}
+            st.dataframe(df_stock[list(cols_pids.keys())].rename(columns=cols_pids), use_container_width=True, height=400, hide_index=True)
 
-    with st.expander(f"**{STR['stock_table_pids']}** ({total_pallets:,} palet)"):
-        cols_pids = {"ARTIKELNR": "Artykuł", "ARTBEZ1": "Opis artykułu", "QUANTITY": "Ilość na palecie", "LHMNR": "PID", "PLATZ": "Miejsce"}
-        st.dataframe(df_stock[list(cols_pids.keys())].rename(columns=cols_pids), use_container_width=True, height=400, hide_index=True)
-
-    df_agg = aggregate_stock_df(df_stock)
-    with st.expander(f"**{STR['stock_table_agg']}** ({len(df_agg):,} wierszy)"):
-        st.dataframe(df_agg, use_container_width=True, height=400, hide_index=True)
+        df_agg = aggregate_stock_df(df_stock)
+        with st.expander(f"**{STR['stock_table_agg']}** ({len(df_agg):,} wierszy)"):
+            st.dataframe(df_agg, use_container_width=True, height=400, hide_index=True)
+    finally:
+        render_end_time = time.time()
+        st.sidebar.info(f"🕒 `render_stock_tab` (total): **{render_end_time - render_start_time:.4f}s**")
 
 
 def render_stock_history(df, selected_mandant_stock, selected_artikel_stock, history_start, history_end, show_cartons_only, STR, widget_prefix: str = ""):
     st.subheader("📈 Historia liczby palet na magazynie")
 
     # 1. Получаем данные
+    build_hist_start = time.time()
     history_df = build_stock_history(
         df=df,
         selected_mandant=selected_mandant_stock,
@@ -216,6 +227,8 @@ def render_stock_history(df, selected_mandant_stock, selected_artikel_stock, his
         end_date=datetime.combine(history_end, datetime.min.time()),
         show_cartons_only=show_cartons_only,
     )
+    build_hist_end = time.time()
+    st.sidebar.info(f"🕒 `build_stock_history`: **{build_hist_end - build_hist_start:.4f}s**")
 
     if history_df is not None and not history_df.empty:
         # --- ЖЕСТКАЯ ОЧИСТКА ДАННЫХ ПЕРЕД ГРАФИКОМ ---

@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+import time
 
 from modules.orders import render_orders_tab
 from modules.ui_strings import STR
@@ -16,7 +17,13 @@ from modules.stock import render_stock_tab
 from modules.stats import render_stats_tab
 from modules.data_loader import load_main_csv
 from modules.filters import render_analysis_filters
+from modules.admin import render_admin_tab
 
+
+# ==============================
+# DEBUG: Czas startu skryptu
+# ==============================
+script_start_time = time.time()
 
 # ==============================
 # Основная конфигурация страницы
@@ -29,10 +36,18 @@ st.set_page_config(
 
 st.title(STR["title"])
 
+# ==============================
+# DEBUG: Panel w sidebarze
+# ==============================
+st.sidebar.title("🐞 Debug Info")
+run_timestamp = datetime.now().strftime("%H:%M:%S.%f")
+st.sidebar.info(f"Script Run at: **{run_timestamp}**")
+
 
 # ==============================
 # Загрузка файла и подготовка df
 # ==============================
+load_start_time = time.time()
 uploaded = st.sidebar.file_uploader(
     STR["upload_csv"],
     type=["csv", "txt"],
@@ -46,6 +61,8 @@ if uploaded is None:
 df = load_main_csv(uploaded)
 if df is None:
     st.stop()
+load_end_time = time.time()
+st.sidebar.info(f"🕒 `load_main_csv`: **{load_end_time - load_start_time:.4f}s**")
 
 # --- Admin Login (Sidebar) ---
 with st.sidebar:
@@ -63,9 +80,13 @@ tabs_labels = [
     "⚙️ Ustawienia",
 ]
 
-# Bezpieczne sprawdzanie hasła przez st.secrets
-# Hasło nie jest przechowywane w kodzie na GitHubie
-if "ADMIN_PASSWORD" in st.secrets and admin_password == st.secrets["ADMIN_PASSWORD"]:
+# Pobieranie hasła z st.secrets (lub domyślne "admin" jeśli brak pliku secrets)
+try:
+    correct_password = st.secrets["ADMIN_PASSWORD"]
+except Exception:
+    correct_password = "admin"
+
+if admin_password == correct_password:
     tabs_labels.append("🔐 Admin")
 
 tabs = st.tabs(tabs_labels)
@@ -76,6 +97,7 @@ tab_stats = tabs[2]
 tab_settings = tabs[3]
 
 with tab_analysis:
+    tab_analysis_start = time.time()
     st.header("⚖️ Analiza dodanych i usuniętych palet")
 
     # 👉 Фильтры теперь рисуются здесь, в этой вкладке
@@ -115,7 +137,7 @@ with tab_analysis:
             st.metric("Przyjęte palety", f"{total_received:,}")
 
     else:
-        # Tryb Wyjście: zachowujemy starą logikę (usunięte)
+        # Tryb Wyjście: zachowujemy starą логику (usunięte)
         deleted_pallets = filtered_pallets_df[filtered_pallets_df["IS_DELETED"]]
 
         if selected_mandant == "352":
@@ -145,17 +167,26 @@ with tab_analysis:
         date_end=date_end,
         selected_mandant=selected_mandant,
     )
+    tab_analysis_end = time.time()
+    st.sidebar.info(f"🕒 `Tab 'Analiza'`: **{tab_analysis_end - tab_analysis_start:.4f}s**")
 
 with tab_stock:
+    tab_stock_start = time.time()
     render_stock_tab(
         df,                # полный очищенный DataFrame
         selected_mandant,  # текущий mandant из фильтров анализа
         selected_artikel,  # текущий список artykułów (можно потом отделить)
         STR,
     )
+    tab_stock_end = time.time()
+    st.sidebar.info(f"🕒 `Tab 'Stany'`: **{tab_stock_end - tab_stock_start:.4f}s**")
 
 with tab_stats:
+    tab_stats_start = time.time()
     render_stats_tab(df, STR)
+    tab_stats_end = time.time()
+    st.sidebar.info(f"🕒 `Tab 'Statystyka'`: **{tab_stats_end - tab_stats_start:.4f}s**")
+
 
 with tab_settings:
     # Используем функцию из модуля
@@ -163,6 +194,11 @@ with tab_settings:
 
 if len(tabs) > 4:
     with tabs[4]:
-        st.header("🔐 Ukryty Panel Administratora")
-        st.info("Witaj w panelu administratora!")
-        st.write("Tutaj możesz dodać funkcje administracyjne.")
+        tab_admin_start = time.time()
+        render_admin_tab(df)
+        tab_admin_end = time.time()
+        st.sidebar.info(f"🕒 `Tab 'Admin'`: **{tab_admin_end - tab_admin_start:.4f}s**")
+
+script_end_time = time.time()
+st.sidebar.info(f"🕒 `Script Total`: **{script_end_time - script_start_time:.4f}s**")
+

@@ -6,6 +6,7 @@ from modules.ui_strings import STR
 from datetime import datetime, timedelta
 import pandas as pd
 from utils import load_packaging_config
+import time
 
 def render_sidebar_filters(df):
     """
@@ -72,7 +73,7 @@ def render_sidebar_filters(df):
     
     # Artikel выбор (после загрузки данных)
     artikel_options = sorted(
-        df[df["MANDANT"].astype(str) == selected_mandant]["ARTIKELNR"]
+        df.loc[df["MANDANT"] == selected_mandant, "ARTIKELNR"]
         .dropna().unique().tolist()
     )
     selected_artikel = st.sidebar.multiselect(
@@ -91,7 +92,7 @@ def apply_filters(df, mandant, artikel, mode, date_start, date_end):
     date_field = "OUT_DATE" if mode == STR["mode_deleted"] else "IN_DATE"
     
     # Базовый фильтр mandant
-    mask = (df["MANDANT"].astype(str) == mandant)
+    mask = (df["MANDANT"] == mandant)
     
     # Фильтр артикулов
     if artikel:
@@ -231,7 +232,7 @@ def render_analysis_filters(df: pd.DataFrame):
     # Artykuł – z powrotem multiselect, ale w nieco węższej kolumnie
     with col_artikel:
         all_artikel_options = sorted(
-            df[df["MANDANT"].astype(str) == selected_mandant]["ARTIKELNR"]
+            df.loc[df["MANDANT"] == selected_mandant, "ARTIKELNR"]
             .dropna()
             .unique()
             .tolist()
@@ -244,7 +245,8 @@ def render_analysis_filters(df: pd.DataFrame):
         )
 
     # Maski filtrów
-    mask_global = (df["MANDANT"].astype(str) == selected_mandant)
+    filter_start_time = time.time()
+    mask_global = (df["MANDANT"] == selected_mandant)
 
     # Filtr po dacie (OUT_DATE lub IN_DATE)
     mask_global &= df[date_field].between(
@@ -258,7 +260,7 @@ def render_analysis_filters(df: pd.DataFrame):
         if "IS_DELETED" in df.columns:
             mask_global &= df["IS_DELETED"]
         else:
-            mask_global &= df["ZUSTAND"].astype(str).str.strip() != "401"
+            mask_global &= df["ZUSTAND"] != "401"
 
     # 1. DataFrame bez filtra artykułów I BEZ FILTRA CZASU (do statystyk porównawczych)
     # Dzięki temu metryki "Artykuły z rozbieżnością" są niezależne od filtra czasu i artykułu.
@@ -275,18 +277,20 @@ def render_analysis_filters(df: pd.DataFrame):
         
         time_col = "OUT_TIME" if date_field == "OUT_DATE" else "IN_TIME"
         
-        def filter_time_range(val):
-            if val is None or pd.isna(val):
-                return False
-            return t_start <= val < t_end
-            
-        mask_view &= df[time_col].apply(filter_time_range)
+        # Wektorowe filtrowanie czasu - znacznie szybsze niż .apply()
+        # Najpierw upewniamy się, że kolumna nie ma NaT, bo to psuje porównania
+        valid_time_mask = df[time_col].notna()
+        # Teraz właściwe filtrowanie na poprawnych danych
+        mask_view &= valid_time_mask & (df[time_col] >= t_start) & (df[time_col] < t_end)
 
     # Filtr artykułów - tylko dla głównego widoku
     if selected_artikel:
         mask_view &= df["ARTIKELNR"].isin([s.strip().upper() for s in selected_artikel])
 
     filtered_pallets_df = df[mask_view].copy()
+    
+    filter_end_time = time.time()
+    st.sidebar.info(f"🕒 `render_analysis_filters` (filtering): **{filter_end_time - filter_start_time:.4f}s**")
 
     # Здесь НЕ пересчитываем IS_DELETED – он уже посчитан при загрузке df
     # и основан на ZUSTAND != 401.
