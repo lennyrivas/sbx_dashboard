@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from utils import load_packages_strategies
+from utils import load_packages_strategies, load_packaging_config
 
 def get_platz_priority(platz):
     """
@@ -115,6 +115,23 @@ def render_removal_tool(stock_df, orders_all, filename):
     strategies_config = load_packages_strategies()
     pallet_priority_prefixes = strategies_config.get("pallet_priority", {}).get("prefixes", ["202671"])
 
+    # Ładowanie konfiguracji opakowań (dla oznaczenia kartonów)
+    kartony_prefixes_raw, _ = load_packaging_config()
+    kartony_prefixes = [k for k in kartony_prefixes_raw if k and str(k).strip()]
+
+    # Helper do formatowania PLATZ (maska dla 02...)
+    def format_platz_display(p_val):
+        p_str = str(p_val).strip()
+        if p_str.startswith("02"):
+            clean = p_str[2:]
+            # Maska: XX-XXX-XX... (np. 1234567 -> 12-345-67)
+            if len(clean) > 5:
+                return f"{clean[:2]}-{clean[2:5]}-{clean[5:]}"
+            elif len(clean) > 2:
+                return f"{clean[:2]}-{clean[2:]}"
+            return clean
+        return p_str
+
     # Używamy formularza, aby zminimalizować przeładowania strony przy każdym kliknięciu
     with st.form("removal_form"):
         for index, row in order_agg.iterrows():
@@ -123,13 +140,19 @@ def render_removal_tool(stock_df, orders_all, filename):
             pallets_needed = int(row["Total_Pallets"])
             qty_per_pal = row["Qty_Per_Pallet"]
 
+            # Sprawdzenie czy to karton
+            is_carton = str(art).startswith(tuple(kartony_prefixes))
+
             # Pobranie dostępnych palet dla artykułu
             art_stock = stock_active[stock_active["ARTIKELNR"] == art].copy()
             
             # Specjalna logika dla artykułów zdefiniowanych w packages_strategies.json (priorytet liczby palet)
             # Sprawdzamy, czy artykuł zaczyna się od jednego ze zdefiniowanych prefiksów
             is_pallet_priority = str(art).startswith(tuple(pallet_priority_prefixes))
-            if is_pallet_priority:
+            
+            if is_carton:
+                suggested_pids = []
+            elif is_pallet_priority:
                 df_special = art_stock.sort_values(
                     by=["PLATZ_PRIORITY", "IN_DATE"], 
                     ascending=[True, True]
@@ -197,7 +220,7 @@ def render_removal_tool(stock_df, orders_all, filename):
                 # Mapa do wyświetlania w multiselect: PID (Ilość) [Miejsce]
                 # Format: PID | Ilość szt. | Miejsce
                 pid_map = {
-                    r["LHMNR"]: f"{r['LHMNR']} | {int(r['QUANTITY'])} szt. | {r['PLATZ']}" 
+                    r["LHMNR"]: f"{r['LHMNR']} | {int(r['QUANTITY'])} szt. | {format_platz_display(r['PLATZ'])}" 
                     for _, r in art_stock.iterrows()
                 }
                 
@@ -206,6 +229,8 @@ def render_removal_tool(stock_df, orders_all, filename):
                 
                 with col_info:
                     st.markdown(f"**{art}**")
+                    if is_carton:
+                        st.markdown("<span style='background-color: #fff8e1; color: #5d4037; padding: 2px 6px; border-radius: 4px; font-size: 0.75em; border: 1px solid #ffe0b2;'>📦 Karton</span>", unsafe_allow_html=True)
                     st.caption(f"Cel: {int(pallets_needed)} pal.")
                     st.caption(f"Cel: {int(qty_needed)} szt.")
 
