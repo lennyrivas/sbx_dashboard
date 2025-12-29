@@ -435,6 +435,29 @@ def parse_order_file_to_df(fobj):
             qty_col_idx = idx
             break
 
+    # --- SANITY CHECK: Pallets vs Qty ---
+    # Проверка физического смысла: кол-во паллет не может превышать кол-во штук.
+    # Если Pallets > Qty, значит колонки перепутаны (например, Qty маленькое и попало под эвристику <= 32).
+    if pallets_col_idx is not None and qty_col_idx is not None:
+        p_vals = pd.to_numeric(
+            df_data.iloc[:, pallets_col_idx].astype(str).str.replace(",", "."),
+            errors="coerce"
+        ).fillna(0)
+        q_vals = pd.to_numeric(
+            df_data.iloc[:, qty_col_idx].astype(str).str.replace(",", "."),
+            errors="coerce"
+        ).fillna(0)
+
+        # Сравниваем только там, где оба значения > 0
+        mask_check = (p_vals > 0) & (q_vals > 0)
+        if mask_check.any():
+            violations = (p_vals[mask_check] > q_vals[mask_check]).sum()
+            valid_count = mask_check.sum()
+            
+            # Если больше 50% валидных строк нарушают условие -> меняем местами
+            if violations > valid_count * 0.5:
+                pallets_col_idx, qty_col_idx = qty_col_idx, pallets_col_idx
+
 
     # Если PER не распознан по известным значениям, но есть 2–3 колонки,
     # то пытаемся взять крайнюю правую как PER, если там не слишком большие числа.
