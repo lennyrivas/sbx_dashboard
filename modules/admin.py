@@ -303,7 +303,7 @@ def render_removal_tool(stock_df, orders_all, filename):
             # Pokaż tylko te z różnicą
             df_diff = df_summary[df_summary["Różnica (szt)"] != 0]
             if not df_diff.empty:
-                st.dataframe(df_diff, use_container_width=True, hide_index=True)
+                st.dataframe(df_diff, width="stretch", hide_index=True)
             else:
                 st.success("Brak różnic ilościowych!")
             st.caption("\\* - Artykuł obsługiwany strategią 'Priorytet Palet' (ignorowanie ilości sztuk)")

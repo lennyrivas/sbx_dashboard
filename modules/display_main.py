@@ -167,7 +167,7 @@ def show_main_display(filtered_df, deleted_df, STR):
 
             st.dataframe(
                 df_left,
-                use_container_width=True,
+                width="stretch",
                 height=350,
                 hide_index=True
             )
@@ -189,7 +189,7 @@ def show_main_display(filtered_df, deleted_df, STR):
 
             st.dataframe(
                 summary.head(10),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
         else:

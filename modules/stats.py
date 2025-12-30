@@ -193,7 +193,7 @@ def render_stats_tab(df, STR):
         top_out.columns = ["Artykuł", "Liczba palet"]
         st.dataframe(
             top_out,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             height=250,
             column_config={
@@ -209,7 +209,7 @@ def render_stats_tab(df, STR):
         top_in.columns = ["Artykuł", "Liczba palet"]
         st.dataframe(
             top_in,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             height=250,
             column_config={
@@ -259,7 +259,7 @@ def render_stats_tab(df, STR):
                 show_cols = ["ARTIKELNR", "ARTBEZ1", "LHMNR", "IN_DATE", "Dni na magazynie", "PLATZ"]
                 st.dataframe(
                     old_stock[show_cols].sort_values("IN_DATE"),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True
                 )
     else:

@@ -792,7 +792,7 @@ def render_manual_orders_editor(artikel_options):
 
         edited = st.data_editor(
             committed_display,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             key="manual_committed_editor",
             column_config={
@@ -857,7 +857,7 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
         df_show["IN_DATE"] = df_show["IN_DATE"].dt.date
         df_show["OUT_DATE"] = df_show["OUT_DATE"].dt.date
 
-        st.dataframe(df_show, use_container_width=True, hide_index=True)
+        st.dataframe(df_show, width="stretch", hide_index=True)
         
         # Agregacja widocznych palet (podsumowanie)
         st.markdown("#### ∑ Podsumowanie listy palet")
@@ -865,7 +865,7 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
             Liczba_palet=("LHMNR", "nunique"),
             Suma_sztuk=("QUANTITY", "sum")
         ).rename(columns={"Liczba_palet": "Liczba palet", "Suma_sztuk": "Suma sztuk"}).sort_values("Liczba palet", ascending=False)
-        st.dataframe(df_list_agg, use_container_width=True, hide_index=True)
+        st.dataframe(df_list_agg, width="stretch", hide_index=True)
 
         # Расширенная аналитика по дням (в expanders)
         with st.expander("📊 Szczegóły przyjęć i usunięć według dnia", expanded=False):
@@ -892,7 +892,7 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
                     daily_accepted = daily_accepted.sort_values(["ARTIKELNR", "IN_DATE"], ascending=[True, False])
                     
                     st.subheader("📥 Przyjęcia według dnia")
-                    st.dataframe(daily_accepted, use_container_width=True, hide_index=True)
+                    st.dataframe(daily_accepted, width="stretch", hide_index=True)
                 else:
                     st.info("Brak przyjętych palet dla wybranego artykułu w wybranym zakresie dat.")
 
@@ -916,7 +916,7 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
                     daily_deleted = daily_deleted.sort_values(["ARTIKELNR", "OUT_DATE"], ascending=[True, False])
                     
                     st.subheader("🗑️ Usunięcia według dnia")
-                    st.dataframe(daily_deleted, use_container_width=True, hide_index=True)
+                    st.dataframe(daily_deleted, width="stretch", hide_index=True)
                 else:
                     st.info("Brak usuniętych palet dla wybranego artykułu w wybranym zakresie dat.")
             else:
@@ -1028,7 +1028,7 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
 
     st.dataframe(
         display_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -1106,7 +1106,7 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
 
             st.dataframe(
                 comparison_df,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 

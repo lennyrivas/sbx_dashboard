@@ -186,11 +186,11 @@ def render_stock_tab(df, selected_mandant, selected_artikel, STR):
 
     with st.expander(f"**{STR['stock_table_pids']}** ({total_pallets:,} palet)"):
         cols_pids = {"ARTIKELNR": "Artykuł", "ARTBEZ1": "Opis artykułu", "QUANTITY": "Ilość na palecie", "LHMNR": "PID", "PLATZ": "Miejsce"}
-        st.dataframe(df_stock[list(cols_pids.keys())].rename(columns=cols_pids), use_container_width=True, height=400, hide_index=True)
+        st.dataframe(df_stock[list(cols_pids.keys())].rename(columns=cols_pids), width="stretch", height=400, hide_index=True)
 
     df_agg = aggregate_stock_df(df_stock)
     with st.expander(f"**{STR['stock_table_agg']}** ({len(df_agg):,} wierszy)"):
-        st.dataframe(df_agg, use_container_width=True, height=400, hide_index=True)
+        st.dataframe(df_agg, width="stretch", height=400, hide_index=True)
 
 
 def render_stock_history(df, selected_mandant_stock, selected_artikel_stock, history_start, history_end, show_cartons_only, STR, widget_prefix: str = ""):
@@ -280,6 +280,6 @@ def render_stock_history(df, selected_mandant_stock, selected_artikel_stock, his
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     else:
         st.info("Brak danych do wyświetlenia historii.")

@@ -61,7 +61,7 @@ def render_settings_tab():
                 label_visibility="collapsed"
             )
         
-        if st.button("💾 Zapisz wyjątki", type="primary", use_container_width=True):
+        if st.button("💾 Zapisz wyjątki", type="primary", width="stretch"):
             new_exact = [x.strip() for x in exact_input.splitlines() if x.strip()]
             new_prefix = [x.strip() for x in prefix_input.splitlines() if x.strip()]
             if save_excluded_articles(new_exact, new_prefix):
@@ -98,7 +98,7 @@ def render_settings_tab():
                 label_visibility="collapsed"
             )
 
-        if st.button("💾 Zapisz konfigurację opakowań", type="primary", use_container_width=True):
+        if st.button("💾 Zapisz konfigurację opakowań", type="primary", width="stretch"):
             new_kartony = [x.strip() for x in kartony_input.splitlines() if x.strip()]
             new_other = [x.strip() for x in other_input.splitlines() if x.strip()]
             if save_packaging_config(new_kartony, new_other):
@@ -126,7 +126,7 @@ def render_settings_tab():
                 label_visibility="collapsed"
             )
             
-            if st.button("💾 Zapisz strategie", type="primary", use_container_width=True):
+            if st.button("💾 Zapisz strategie", type="primary", width="stretch"):
                 new_strat_prefixes = [x.strip() for x in strat_input.splitlines() if x.strip()]
                 if save_packages_strategies(new_strat_prefixes):
                     st.success("✅ Strategie zapisane pomyślnie")
