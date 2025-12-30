@@ -134,6 +134,13 @@ def render_removal_tool(stock_df, orders_all, filename):
 
     # Używamy formularza, aby zminimalizować przeładowania strony przy każdym kliknięciu
     with st.form("removal_form"):
+        # Podział na dwie kolumny: Pozostałe (lewo) | Kartony (prawo)
+        col_others, col_cartons = st.columns(2)
+        with col_others:
+            st.markdown("##### 🏷️ Pozostałe")
+        with col_cartons:
+            st.markdown("##### 📦 Kartony")
+
         for index, row in order_agg.iterrows():
             art = row["ARTIKELNR"]
             qty_needed = row["Total_Qty"]
@@ -212,10 +219,13 @@ def render_removal_tool(stock_df, orders_all, filename):
                 else:
                     suggested_pids = pids_strat1
             
+            # Wybór kolumny docelowej
+            target_col = col_cartons if is_carton else col_others
+
             # Wyświetlanie wiersza
-            with st.container():
-                # Kompaktowy układ: Info po lewej (1), Wybór po prawej (4) - więcej miejsca na PID
-                col_info, col_select = st.columns([1, 4])
+            with target_col:
+                # Kompaktowy układ: Info po lewej (1), Wybór po prawej (2) - dostosowane do węższej kolumny
+                col_info, col_select = st.columns([1, 2])
                 
                 # Mapa do wyświetlania w multiselect: PID (Ilość) [Miejsce]
                 # Format: PID | Ilość szt. | Miejsce
