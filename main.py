@@ -102,7 +102,7 @@ tabs_labels = [
     "Analiza zamówień vs palet",
     "Stany magazynowe",
     "📊 Statystyka",
-    "⚙️ Ustawienia",
+    "🗑️ Usuwanie palet",
 ]
 
 # Pobieranie hasła z st.secrets (lub domyślne "admin" jeśli brak pliku secrets)
@@ -112,14 +112,14 @@ except Exception:
     correct_password = "admin"
 
 if admin_password == correct_password:
-    tabs_labels.append("🔐 Usuwanie palet")
+    tabs_labels.append("⚙️ Ustawienia")
 
 tabs = st.tabs(tabs_labels)
 
 tab_analysis = tabs[0]
 tab_stock = tabs[1]
 tab_stats = tabs[2]
-tab_settings = tabs[3]
+tab_removal = tabs[3]
 
 with tab_analysis:
     st.header("⚖️ Analiza dodanych i usuniętych palet")
@@ -203,11 +203,10 @@ with tab_stock:
 with tab_stats:
     render_stats_tab(df, STR)
 
-
-with tab_settings:
-    # Используем функцию из модуля
-    render_settings_tab()
+with tab_removal:
+    render_admin_tab(df)
 
 if len(tabs) > 4:
     with tabs[4]:
-        render_admin_tab(df)
+        # Ustawienia dostępne tylko dla admina
+        render_settings_tab()
