@@ -22,5 +22,19 @@ config.ini
 # Streamlit session file
 session_state*.pkl
 
-# Streamlit secrets (hasła)
+# Streamlit - Hasła i konfiguracja prywatna
 .streamlit/secrets.toml
+
+# Google API - Klucze
+client_secret.json
+
+# Pliki sesji generowane przez aplikację
+session_state_*.pkl
+
+# Pliki danych (aby nie wysyłać danych magazynowych do repozytorium)
+*.csv
+*.xlsx
+
+# Ignoruj pliki tekstowe (np. raporty), ale zachowaj requirements.txt
+*.txt
+!requirements.txt
