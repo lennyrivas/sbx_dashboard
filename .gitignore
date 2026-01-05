@@ -38,3 +38,5 @@ session_state_*.pkl
 # Ignoruj pliki tekstowe (np. raporty), ale zachowaj requirements.txt
 *.txt
 !requirements.txt
+
+libs/

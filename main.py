@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import uuid
+import os
 
 from modules.orders import render_orders_tab
 from modules.ui_strings import STR
@@ -18,6 +19,7 @@ from modules.stats import render_stats_tab
 from modules.data_loader import load_main_csv, save_session_to_disk, load_session_from_disk, clear_session_state
 from modules.filters import render_analysis_filters
 from modules.admin import render_admin_tab
+from modules.downloader import run_ihka_downloader, cleanup_temp_downloads, create_standalone_package
 
 
 # ==============================
@@ -51,6 +53,65 @@ except AttributeError:
 # ==============================
 # Загрузка файла и подготовка df
 # ==============================
+
+# --- АВТОМАТИЧЕСКАЯ ЗАГРУЗКА (IHKA) ---
+st.sidebar.markdown("### 📥 Import danych")
+
+if st.sidebar.button(STR["btn_auto_download"], type="primary"):
+    # Контейнер для статусов
+    status_box = st.sidebar.status("Łączenie z IHKA...", expanded=True)
+    
+    # Запуск процесса
+    file_path = run_ihka_downloader(status_box)
+    
+    if file_path:
+        # Если файл скачан, загружаем его
+        try:
+            with open(file_path, "rb") as f:
+                # Создаем объект файла в памяти, чтобы передать в load_main_csv
+                from io import BytesIO
+                mem_file = BytesIO(f.read())
+                # Używamy pełnej ścieżki, aby uniknąć błędu [WinError 2] przy cache'owaniu
+                mem_file.name = file_path 
+                
+                # Загружаем в DataFrame
+                df = load_main_csv(mem_file)
+                if df is not None:
+                    save_session_to_disk(df, session_id)
+                    st.session_state["restored_df"] = df
+                    status_box.update(label="Gotowe!", state="complete", expanded=False)
+                    st.rerun()
+                else:
+                    status_box.update(label="Błąd formatu pliku", state="error")
+        except Exception as e:
+            # Ukrywamy surowy błąd systemowy (który może być po rosyjsku) i pokazujemy polski komunikat
+            st.sidebar.error("Wystąpił błąd podczas przetwarzania pobranego pliku.")
+            print(f"Auto-download error: {e}")
+        finally:
+            # Чистим за собой
+            cleanup_temp_downloads()
+    else:
+        status_box.update(label="Błąd", state="error")
+
+# Dodatkowy przycisk do ręcznego otwarcia strony, jeśli automat nie działa (np. w chmurze)
+st.sidebar.link_button(STR["btn_open_ihka"], "http://ihka.schaeflein.de/WebAccess/Auth/Login")
+
+# --- OFFLINE TOOL DOWNLOAD ---
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🛠️ Narzędzie Offline")
+st.sidebar.caption("Jeśli automat nie działa (np. w chmurze), pobierz to narzędzie, uruchom na komputerze w sieci Wi-Fi, a pobrany plik wgraj powyżej.")
+
+zip_file = create_standalone_package()
+st.sidebar.download_button(
+    label="📥 Pobierz skrypt (.zip)",
+    data=zip_file,
+    file_name="ihka_downloader_tool.zip",
+    mime="application/zip"
+)
+
+st.sidebar.caption(STR["wifi_warning"])
+st.sidebar.markdown("---")
+
 uploaded = st.sidebar.file_uploader(
     STR["upload_csv"],
     type=["csv", "txt"],

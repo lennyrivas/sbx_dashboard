@@ -52,5 +52,19 @@ STR = {
     "checkbox_cartons_only":"Pokaż tylko kartony",	#Чекбокс фильтрации.
     "stock_date_title":"Analiza stanów magazynowych na datę",	#Заголовок для выбора даты.
     "stock_date_label":"Wybierz datę/zakres (historia)",	#Лейбл виджета выбора даты.
-    "stock_date_range_label":"Zakres dat dla analizy historycznej"	#Лейбл для графика (будущее).
+    "stock_date_range_label":"Zakres dat dla analizy historycznej",	#Лейбл для графика (будущее).
+    
+    # Downloader
+    "btn_auto_download": "🔄 Auto-pobieranie danych (IHKA)",
+    "wifi_warning": "⚠️ Wymagane połączenie z siecią Wi-Fi organizacji (Schaeflein).",
+    "dl_step_init": "Inicjalizacja przeglądarki Firefox...",
+    "dl_step_login": "Logowanie do systemu...",
+    "dl_step_nav": "Nawigacja do raportu...",
+    "dl_step_params": "Ustawianie parametrów (Daty, Mandant)...",
+    "dl_step_exec": "Generowanie tabeli (może to chwilę potrwać)...",
+    "dl_step_download": "Pobieranie pliku CSV...",
+    "dl_success": "Plik pobrany i załadowany pomyślnie!",
+    "dl_error": "Błąd pobierania: ",
+    "dl_network_error": "⚠️ Błąd sieci: Serwer nie ma dostępu do IHKA. Jeśli używasz chmury, pobierz plik ręcznie.",
+    "btn_open_ihka": "🌐 Otwórz IHKA (Pobieranie ręczne)"
 }
