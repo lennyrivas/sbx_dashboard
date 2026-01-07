@@ -34,7 +34,13 @@ def render_settings_tab():
 
     # 1. Исключения артикулов
     st.subheader("1. Wykluczenia z porównań")
-    st.caption("Zdefiniuj artykuły, które mają być ignorowane w tabelach różnic (np. opakowania zwrotne).")
+    st.caption("Artykuły do pominięcia w tabelach różnic")
+    st.caption("""
+    **Wyjaśnienie:**  
+    Artykuły wykluczeń to pozycje, gdzie ilość w zamówieniu nie zgadza się z ilością w systemie.  
+    Pomimo prawidłowej fizycznej wysyłki towaru, program może pokazywać różnice w paletach lub sztukach.  
+    Dodanie takich artykułów do listy wykluczeń eliminuje fałszywe różnice w tabelach.
+    """)
     
     exact_list, prefix_list = load_excluded_articles()
 
