@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import traceback
 import sys
+import re
 from modules.ui_strings import STR
 
 # Cache na zamówienia z plików
@@ -539,6 +540,43 @@ def natural_sort_key(text):
     parts = re.split(r"(\d+)", str(text).upper())
     return [int(p) if p.isdigit() else p for p in parts]
 
+def extract_date_from_filename(filename):
+    """
+    Próbuje wyciągnąć datę z nazwy pliku.
+    Obsługuje: dd-mm-yyyy, yyyy-mm-dd oraz dd-mm-yy (separatory: - . _)
+    """
+    s = str(filename)
+    
+    # 1. Format dd-mm-yyyy (np. 01-05-2023)
+    match_dmy = re.search(r"(\d{2})[-._](\d{2})[-._](\d{4})", s)
+    if match_dmy:
+        d, m, y = match_dmy.groups()
+        try:
+            return pd.Timestamp(year=int(y), month=int(m), day=int(d)).date()
+        except ValueError:
+            pass
+
+    # 2. Format yyyy-mm-dd (np. 2023-05-01)
+    match_ymd = re.search(r"(\d{4})[-._](\d{2})[-._](\d{2})", s)
+    if match_ymd:
+        y, m, d = match_ymd.groups()
+        try:
+            return pd.Timestamp(year=int(y), month=int(m), day=int(d)).date()
+        except ValueError:
+            pass
+
+    # 3. Format dd-mm-yy (np. 01-05-23) -> zakłada rok 20xx
+    match_dmy_short = re.search(r"(\d{2})[-._](\d{2})[-._](\d{2})", s)
+    if match_dmy_short:
+        d, m, y = match_dmy_short.groups()
+        year_full = 2000 + int(y)
+        try:
+            return pd.Timestamp(year=year_full, month=int(m), day=int(d)).date()
+        except ValueError:
+            pass
+            
+    return None
+
 def aggregate_uploaded_orders(uploaded_orders):
     """
     Przyjmuje listę plików ze st.file_uploader,
@@ -572,6 +610,8 @@ def aggregate_uploaded_orders(uploaded_orders):
         and cache.get("orders_agg") is not None
         and cache.get("orders_detail_map") is not None
         and "valid_count" in cache
+        # Sprawdzenie czy cache zawiera kolumnę ORDER_DATE (dla kompatybilności)
+        and cache.get("orders_all") is not None and "ORDER_DATE" in cache["orders_all"].columns
     ):
         # użyj już policzonych danych – bez ponownego parsowania
         return cache["orders_all"], cache["orders_agg"], cache["valid_count"]
@@ -592,6 +632,7 @@ def aggregate_uploaded_orders(uploaded_orders):
         # dodaj info o źródle do wierszy
         parsed = parsed.copy()
         parsed["SOURCE_FILE"] = name
+        parsed["ORDER_DATE"] = extract_date_from_filename(name)
 
         # budowa mapy szczegółów: suma sztuk z każdego pliku dla danego artykułu
         grouped = parsed.groupby("ARTIKELNR", as_index=False).agg(
@@ -932,13 +973,28 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
     # 2) ВТОРОЙ БЛОК: Zamówienia (pliki + ręczne)
     st.subheader("📦 Zamówienia")
 
+    if "orders_uploader_key" not in st.session_state:
+        st.session_state["orders_uploader_key"] = 0
+
     # Загрузка файлов заказов
     uploaded_orders = st.file_uploader(
         STR["upload_orders"],
         type=["xlsx", "csv", "txt"],
         accept_multiple_files=True,
-        key="orders_uploader",
+        key=f"orders_uploader_{st.session_state['orders_uploader_key']}",
     )
+
+    if uploaded_orders:
+        if st.button("🗑️ Usuń wszystkie pliki zamówień", key="clear_all_orders_btn"):
+            st.session_state["orders_cache"] = {
+                "files_keys": None,
+                "orders_all": None,
+                "orders_agg": None,
+                "orders_detail_map": {},
+                "valid_count": 0,
+            }
+            st.session_state["orders_uploader_key"] += 1
+            st.rerun()
 
     orders_all, orders_agg_base, valid_files_count = aggregate_uploaded_orders(uploaded_orders)
 
@@ -1103,6 +1159,68 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
             comparison_df["Wyjaśnienie różnicy"] = comparison_df.apply(explain_diff, axis=1)
 
             comparison_df = comparison_df.sort_values("Różnica_Palety", ascending=False).reset_index(drop=True)
+
+            # --- Analiza dzienna (Daily Breakdown) ---
+            # Pokazujemy kolumnę tylko jeśli wybrano zakres dat (> 1 dzień)
+            is_date_range = date_start and date_end and (date_end.date() - date_start.date()).days > 0
+
+            if is_date_range and orders_all is not None and "ORDER_DATE" in orders_all.columns and not orders_all.empty:
+                # 1. Zamówienia wg daty
+                orders_valid = orders_all.dropna(subset=["ORDER_DATE"]).copy()
+                
+                # Ostrzeżenie o plikach bez daty
+                missing_date_mask = orders_all["ORDER_DATE"].isna()
+                if missing_date_mask.any():
+                    missing_files = orders_all.loc[missing_date_mask, "SOURCE_FILE"].unique()
+                    if len(missing_files) > 0:
+                        st.warning(
+                            f"⚠️ Uwaga: Nie rozpoznano daty w nazwach {len(missing_files)} plików (np. {missing_files[0]}). "
+                            "Zamówienia z tych plików są wliczone w sumę ogólną, ale NIE pojawią się w kolumnie 'Dni z różnicą'."
+                        )
+
+                if not orders_valid.empty:
+                    orders_daily = orders_valid.groupby(["ARTIKELNR", "ORDER_DATE"], as_index=False)["ORDER_PALLETS"].sum()
+                    orders_daily.rename(columns={"ORDER_DATE": "DATE", "ORDER_PALLETS": "ORD"}, inplace=True)
+                else:
+                    orders_daily = pd.DataFrame(columns=["ARTIKELNR", "DATE", "ORD"])
+                
+                # 2. Usunięcia wg daty (z deleted_pallets)
+                if not deleted_pallets.empty:
+                    del_daily = deleted_pallets.copy()
+                    del_daily["DATE"] = del_daily["OUT_DATE"].dt.date
+                    del_daily_agg = del_daily.groupby(["ARTIKELNR", "DATE"], as_index=False)["LHMNR"].nunique()
+                    del_daily_agg.rename(columns={"LHMNR": "DEL"}, inplace=True)
+                else:
+                    del_daily_agg = pd.DataFrame(columns=["ARTIKELNR", "DATE", "DEL"])
+
+                # 3. Łączenie i obliczanie różnic
+                if not orders_daily.empty or not del_daily_agg.empty:
+                    daily_merged = pd.merge(orders_daily, del_daily_agg, on=["ARTIKELNR", "DATE"], how="outer").fillna(0)
+                    daily_merged["DIFF"] = daily_merged["ORD"] - daily_merged["DEL"]
+                    
+                    # Filtrowanie tylko różnic
+                    daily_diffs = daily_merged[daily_merged["DIFF"] != 0].copy()
+                    
+                    if not daily_diffs.empty:
+                        daily_diffs = daily_diffs.sort_values("DATE")
+                        
+                        def fmt_diff(row):
+                            d_str = row["DATE"].strftime("%d.%m")
+                            val = int(row["DIFF"])
+                            sign = "+" if val > 0 else ""
+                            return f"{d_str}: {sign}{val}"
+
+                        daily_diffs["TXT"] = daily_diffs.apply(fmt_diff, axis=1)
+                        
+                        daily_map = daily_diffs.groupby("ARTIKELNR")["TXT"].apply(lambda x: "\n".join(x)).to_dict()
+                        
+                        comparison_df["Dni z różnicą"] = comparison_df["ARTIKELNR"].map(daily_map).fillna("-")
+                    else:
+                        comparison_df["Dni z różnicą"] = "-"
+                else:
+                    comparison_df["Dni z różnicą"] = "-"
+            elif is_date_range:
+                comparison_df["Dni z różnicą"] = "-"
 
             st.dataframe(
                 comparison_df,
