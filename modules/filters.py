@@ -147,7 +147,7 @@ def render_analysis_filters(df: pd.DataFrame):
 
     # Jedna linia: Mandant | Tryb | Daty (tryb + od + do) | Czas | Artykuł
     col_mandant, col_mode, col_dates, col_time, col_artikel = st.columns(
-        [0.4, 1.2, 2.8, 1.0, 1.4]
+        [0.6, 1.2, 2.8, 1.0, 1.4]
     )
 
     yesterday = (datetime.now() - timedelta(days=1)).date()

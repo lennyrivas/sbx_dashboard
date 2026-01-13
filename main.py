@@ -18,7 +18,7 @@ from modules.stock import render_stock_tab
 from modules.stats import render_stats_tab
 from modules.data_loader import load_main_csv, save_session_to_disk, load_session_from_disk, clear_session_state
 from modules.filters import render_analysis_filters
-from modules.admin import render_admin_tab
+from modules.removal import render_removal_tab
 from modules.downloader import run_ihka_downloader, cleanup_temp_downloads, create_standalone_package
 
 
@@ -265,7 +265,7 @@ with tab_stats:
     render_stats_tab(df, STR)
 
 with tab_removal:
-    render_admin_tab(df)
+    render_removal_tab(df)
 
 if len(tabs) > 4:
     with tabs[4]:
