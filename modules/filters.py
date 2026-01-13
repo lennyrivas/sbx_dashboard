@@ -157,7 +157,7 @@ def render_analysis_filters(df: pd.DataFrame):
         selected_mandant = st.selectbox(
             "Mandant",
             options=["351", "352"],
-            index=0,
+            index=1,
             key="analysis_mandant",
         )
 
