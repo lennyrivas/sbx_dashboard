@@ -264,7 +264,10 @@ def render_removal_tool(stock_df, orders_all, filename):
                     match_qty = abs(sel_qty - qty_needed) < 0.1
                     
                     # Kolorowanie tekstu
-                    color_class = "green" if (match_pal and match_qty) else "red"
+                    if is_pallet_priority:
+                        color_class = "green" if match_pal else "red"
+                    else:
+                        color_class = "green" if match_qty else "red"
                     
                     summary_text = f"Zamówiono: {int(pallets_needed)} pal. / {int(qty_needed)} szt. | Wybrano: {sel_count} pal. / {int(sel_qty)} szt."
                     st.markdown(f":{color_class}[{summary_text}]")
