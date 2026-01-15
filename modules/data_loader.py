@@ -141,4 +141,10 @@ def load_main_csv(uploaded_file):
     # Логика удаления: ZUSTAND != 401
     df["IS_DELETED"] = df["ZUSTAND"] != "401"
     
+    # Если паллета на складе (401), очищаем OUT_DATE и OUT_TIME
+    # Это предотвращает отображение даты последнего изменения как даты удаления
+    mask_stock = df["ZUSTAND"] == "401"
+    df.loc[mask_stock, "OUT_DATE"] = pd.NaT
+    df.loc[mask_stock, "OUT_TIME"] = None
+
     return df
