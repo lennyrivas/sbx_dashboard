@@ -1,8 +1,7 @@
 # modules/settings.py
-# Настройки типов паллет
+# Pallet type settings.
 
 import streamlit as st
-from modules.ui_strings import STR
 from utils import (
     load_excluded_articles,
     save_excluded_articles,
@@ -13,7 +12,7 @@ from utils import (
 )
 
 def init_settings():
-    """Инициализация настроек по умолчанию"""
+    """Initialize default settings."""
     defaults = {
         "cartons": ["83090", "676", "568", "ZC", "826", "3807486", 
                    "PRZEKLADKI CIETE", "RAMKA IPUV", "TCM-ECE", "TKAS"],
@@ -27,28 +26,23 @@ def init_settings():
     
     return defaults
 
-def render_settings_tab():
-    """Расширенные настройки исключений + упаковка"""
-    st.header("⚙️ Ustawienia")
+def render_settings_tab(STR):
+    """Extended settings for exceptions + packaging."""
+    st.header(STR["settings_header"])
     st.markdown("---")
 
-    # 1. Исключения артикулов
-    st.subheader("1. Wykluczenia z porównań")
-    st.caption("Artykuły do pominięcia w tabelach różnic")
-    st.caption("""
-    **Wyjaśnienie:**  
-    Artykuły wykluczeń to pozycje, gdzie ilość w zamówieniu nie zgadza się z ilością w systemie.  
-    Pomimo prawidłowej fizycznej wysyłki towaru, program może pokazywać różnice w paletach lub sztukach.  
-    Dodanie takich artykułów do listy wykluczeń eliminuje fałszywe różnice w tabelach.
-    """)
+    # 1. Article Exceptions
+    st.subheader(STR["settings_sect1_header"])
+    st.caption(STR["settings_sect1_caption"])
+    st.caption(STR["settings_sect1_explanation"])
     
     exact_list, prefix_list = load_excluded_articles()
 
     with st.container():
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("##### 🎯 Artykuły (dokładne dopasowanie)")
-            st.caption("Wpisz pełne numery artykułów, jeden pod drugim.")
+            st.markdown(STR["settings_exact_match_header"])
+            st.caption(STR["settings_exact_match_caption"])
             exact_input = st.text_area(
                 label="exact_hidden",
                 value="\n".join(exact_list),
@@ -57,8 +51,8 @@ def render_settings_tab():
                 label_visibility="collapsed"
             )
         with col2:
-            st.markdown("##### 🔤 Prefiksy (początek numeru)")
-            st.caption("Wpisz ciągi znaków, od których zaczynają się wykluczone artykuły.")
+            st.markdown(STR["settings_prefix_header"])
+            st.caption(STR["settings_prefix_caption"])
             prefix_input = st.text_area(
                 label="prefix_hidden",
                 value="\n".join(prefix_list),
@@ -67,25 +61,25 @@ def render_settings_tab():
                 label_visibility="collapsed"
             )
         
-        if st.button("💾 Zapisz wyjątki", type="primary", width="stretch"):
+        if st.button(STR["settings_btn_save_exceptions"], type="primary", width="stretch"):
             new_exact = [x.strip() for x in exact_input.splitlines() if x.strip()]
             new_prefix = [x.strip() for x in prefix_input.splitlines() if x.strip()]
             if save_excluded_articles(new_exact, new_prefix):
-                st.success("✅ Wyjątki zapisane pomyślnie")
+                st.success(STR["settings_msg_exceptions_saved"])
 
     st.markdown("---")
 
-    # 2. Конфигурация упаковки
-    st.subheader("2. Konfiguracja opakowań (Mandant 352)")
-    st.caption("Określ, które artykuły są kartonami, a które innymi opakowaniami, na podstawie ich prefiksów.")
+    # 2. Packaging Configuration
+    st.subheader(STR["settings_sect2_header"])
+    st.caption(STR["settings_sect2_caption"])
     
     kartony_prefixes, other_prefixes = load_packaging_config()
 
     with st.container():
         col3, col4 = st.columns(2)
         with col3:
-            st.markdown("##### 📦 Prefiksy Kartonów")
-            st.caption("Artykuły zaczynające się od tych znaków będą zliczane jako kartony.")
+            st.markdown(STR["settings_cartons_header"])
+            st.caption(STR["settings_cartons_caption"])
             kartony_input = st.text_area(
                 label="kartony_hidden",
                 value="\n".join(kartony_prefixes),
@@ -94,8 +88,8 @@ def render_settings_tab():
                 label_visibility="collapsed"
             )
         with col4:
-            st.markdown("##### 🏷️ Inne opakowania")
-            st.caption("Prefiksy dla pozostałych typów opakowań (nie-paletowych).")
+            st.markdown(STR["settings_other_pkg_header"])
+            st.caption(STR["settings_other_pkg_caption"])
             other_input = st.text_area(
                 label="other_hidden",
                 value="\n".join(other_prefixes),
@@ -104,17 +98,17 @@ def render_settings_tab():
                 label_visibility="collapsed"
             )
 
-        if st.button("💾 Zapisz konfigurację opakowań", type="primary", width="stretch"):
+        if st.button(STR["settings_btn_save_packaging"], type="primary", width="stretch"):
             new_kartony = [x.strip() for x in kartony_input.splitlines() if x.strip()]
             new_other = [x.strip() for x in other_input.splitlines() if x.strip()]
             if save_packaging_config(new_kartony, new_other):
-                st.success("✅ Konfiguracja opakowań zapisana pomyślnie")
+                st.success(STR["settings_msg_packaging_saved"])
 
     st.markdown("---")
 
-    # 3. Strategie
-    st.subheader("3. Strategie usuwania (Priorytet Palet)")
-    st.caption("Dla poniższych artykułów system będzie dobierał palety do usunięcia kierując się liczbą palet, a nie sumą sztuk.")
+    # 3. Strategies
+    st.subheader(STR["settings_sect3_header"])
+    st.caption(STR["settings_sect3_caption"])
     
     strategies = load_packages_strategies()
     pallet_priority_prefixes = strategies.get("pallet_priority", {}).get("prefixes", [])
@@ -122,8 +116,8 @@ def render_settings_tab():
     with st.container():
         col5, col6 = st.columns([1, 1])
         with col5:
-            st.markdown("##### 🔢 Prefiksy artykułów")
-            st.caption("Wpisz prefiksy artykułów (np. '202671'), dla których 1 szt. w zamówieniu = 1 paleta fizyczna.")
+            st.markdown(STR["settings_strat_prefixes_header"])
+            st.caption(STR["settings_strat_prefixes_caption"])
             strat_input = st.text_area(
                 label="strat_hidden",
                 value="\n".join(pallet_priority_prefixes),
@@ -132,21 +126,10 @@ def render_settings_tab():
                 label_visibility="collapsed"
             )
             
-            if st.button("💾 Zapisz strategie", type="primary", width="stretch"):
+            if st.button(STR["settings_btn_save_strategies"], type="primary", width="stretch"):
                 new_strat_prefixes = [x.strip() for x in strat_input.splitlines() if x.strip()]
                 if save_packages_strategies(new_strat_prefixes):
-                    st.success("✅ Strategie zapisane pomyślnie")
+                    st.success(STR["settings_msg_strategies_saved"])
         
         with col6:
-            st.info("""
-            ℹ️ **Jak to działa?**
-            
-            Jeśli artykuł znajduje się na tej liście, algorytm w zakładce **Usuwanie palet** zignoruje ilość sztuk na palecie i spróbuje dobrać dokładnie tyle palet, ile wynika z zamówienia.
-            
-            **Przykład:**
-            Zamówienie: 1 szt. (co oznacza 1 paletę).
-            Stan: Paleta ma 4 sztuki.
-            
-            Bez tej strategii: System szukałby palety z 1 sztuką.
-            Z tą strategią: System weźmie paletę z 4 sztukami, bo liczy się 1 paleta.
-            """)
+            st.info(STR["settings_strat_explanation"])

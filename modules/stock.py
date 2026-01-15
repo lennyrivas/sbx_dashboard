@@ -6,28 +6,27 @@ from datetime import datetime, timedelta
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from modules.ui_strings import STR
 from utils import load_packaging_config, classify_pallet
 
 
-# --- Логика фильтрации ---
+# --- Filtering Logic ---
 
 def filter_stock_df(df, selected_mandant, selected_artikel, selected_date):
     """
-    ✅ СТРОГАЯ ФИЛЬТРАЦИЯ складских остатков на начало дня
-    Логика: IN_DATE < дата И (OUT_DATE пустой ИЛИ OUT_DATE >= дата)
-    + ДЕДУПЛИКАЦИЯ по LHMNR (каждый PID только 1 раз)
+    ✅ STRICT FILTRATION of stock levels at start of day
+    Logic: IN_DATE < date AND (OUT_DATE empty OR OUT_DATE >= date)
+    + DEDUPLICATION by LHMNR (each PID only once)
     """
     if df is None or df.empty:
         return pd.DataFrame()
 
-    # 🎯 ШАГ 1: Базовый фильтр mandant
+    # 🎯 STEP 1: Base mandant filter
     df_filtered = df[df["MANDANT"].astype(str) == selected_mandant].copy()
 
-    # 🎯 ШАГ 2: СТРОГАЯ ФИЛЬТРАЦИЯ ПО ДАТЕ
+    # 🎯 STEP 2: STRICT DATE FILTRATION
     mask_in = df_filtered["IN_DATE"].dt.date < selected_date.date()
     
-    # Статус 401 (на складе) или удалена позже выбранной даты
+    # Status 401 (in stock) or deleted later than selected date
     mask_is_401 = df_filtered["ZUSTAND"].astype(str) == "401"
     mask_removed_later = df_filtered["OUT_DATE"].dt.date >= selected_date.date()
     
@@ -35,17 +34,17 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date):
     
     df_stock_raw = df_filtered[mask_in & mask_out_logic].copy()
         
-    # 🎯 ШАГ 3: ДЕДУПЛИКАЦИЯ ПО LHMNR
+    # 🎯 STEP 3: DEDUPLICATION BY LHMNR
     df_stock = df_stock_raw.sort_values("IN_DATE", ascending=False).drop_duplicates(
         subset=["LHMNR"], keep="first"
     )
     
-    # 🎯 ШАГ 4: Фильтр артикулов
+    # 🎯 STEP 4: Article filter
     if selected_artikel:
         artikel_list = [a.strip().upper() for a in selected_artikel]
         df_stock = df_stock[df_stock["ARTIKELNR"].isin(artikel_list)].copy()
 
-    # 🎯 ШАГ 5: Классификация упаковки
+    # 🎯 STEP 5: Packaging classification
     kartony_prefixes, other_packaging_prefixes = load_packaging_config()
     pallets_frames_prefixes = st.session_state.get("pallets_frames", [])
     
@@ -62,9 +61,9 @@ def filter_stock_df(df, selected_mandant, selected_artikel, selected_date):
     return df_stock
 
 
-# --- Логика агрегации ---
+# --- Aggregation Logic ---
 
-def aggregate_stock_df(df_stock):
+def aggregate_stock_df(df_stock, STR):
     if df_stock.empty:
         return pd.DataFrame()
         
@@ -73,8 +72,8 @@ def aggregate_stock_df(df_stock):
         Ilość_sztuk=("QUANTITY", "sum")
     ).reset_index()
 
-    df_agg.columns = ["Artykuł", "Opis artykułu", "Opakowanie", "Ilość palet", "Ilość sztuk"]
-    return df_agg.sort_values("Ilość palet", ascending=False)
+    df_agg.columns = [STR["col_article"], STR["col_description"], STR["col_packaging"], STR["col_pallet_count"], STR["col_quantity"]]
+    return df_agg.sort_values(STR["col_pallet_count"], ascending=False)
 
 
 @st.cache_data
@@ -131,39 +130,39 @@ def build_stock_history(
     return pd.DataFrame(history_rows)
 
 
-# --- Рендеринг вкладки ---
+# --- Tab Rendering ---
 
 def render_stock_tab(df, selected_mandant, selected_artikel, STR):
     st.header(STR["stock_tab"])
     st.markdown("---")
-    st.subheader("🔍 Filtry dla stanów magazynowych")
+    st.subheader(STR["stock_filters_title"])
 
     col_stock_mandant, col_stock_date, col_stock_artikel = st.columns([1, 1.5, 2])
 
     with col_stock_mandant:
         available_mandants_stock = sorted(df["MANDANT"].astype(str).unique())
-        selected_mandant_stock = st.selectbox("Mandant", options=available_mandants_stock, index=0, key="stock_mandant_filter")
+        selected_mandant_stock = st.selectbox(STR["mandant"], options=available_mandants_stock, index=0, key="stock_mandant_filter")
 
     with col_stock_date:
         yesterday = (datetime.now() - timedelta(days=1)).date()
-        stock_date = st.date_input("Data sprawdzenia stanów", value=yesterday, max_value=datetime.now().date(), key="stock_date_only")
+        stock_date = st.date_input(STR["stock_date_check"], value=yesterday, max_value=datetime.now().date(), key="stock_date_only")
         selected_date_stock = datetime.combine(stock_date, datetime.min.time())
 
     with col_stock_artikel:
         artikel_stock_options = sorted(df[df["MANDANT"].astype(str) == selected_mandant_stock]["ARTIKELNR"].dropna().unique().tolist())
-        selected_artikel_stock = st.multiselect("Artykuły", options=artikel_stock_options, default=[], key="stock_artikel_filter")
+        selected_artikel_stock = st.multiselect(STR["stock_articles"], options=artikel_stock_options, default=[], key="stock_artikel_filter")
 
     if str(selected_mandant_stock) == "351":
         show_cartons_only = False
     else:
-        show_cartons_only = st.checkbox("📦 Pokaż tylko kartony", key="stock_cartons_only_new")
+        show_cartons_only = st.checkbox(f"📦 {STR['checkbox_cartons_only']}", key="stock_cartons_only_new")
 
     st.markdown("---")
 
     df_stock = filter_stock_df(df, selected_mandant_stock, selected_artikel_stock, selected_date_stock)
 
     if df_stock.empty:
-        st.warning(f"Brak palet na magazynie.")
+        st.warning(STR["stock_no_pallets"])
         return
 
     if show_cartons_only:
@@ -184,19 +183,25 @@ def render_stock_tab(df, selected_mandant, selected_artikel, STR):
     
     st.markdown("---")
 
-    with st.expander(f"**{STR['stock_table_pids']}** ({total_pallets:,} palet)"):
-        cols_pids = {"ARTIKELNR": "Artykuł", "ARTBEZ1": "Opis artykułu", "QUANTITY": "Ilość na palecie", "LHMNR": "PID", "PLATZ": "Miejsce"}
+    with st.expander(f"**{STR['stock_table_pids']}** ({total_pallets:,} {STR['suffix_pallets']})"):
+        cols_pids = {
+            "ARTIKELNR": STR["col_article"],
+            "ARTBEZ1": STR["col_description"],
+            "QUANTITY": STR["col_qty_per_pallet"],
+            "LHMNR": STR["col_pid"],
+            "PLATZ": STR["col_place"]
+        }
         st.dataframe(df_stock[list(cols_pids.keys())].rename(columns=cols_pids), width="stretch", height=400, hide_index=True)
 
-    df_agg = aggregate_stock_df(df_stock)
-    with st.expander(f"**{STR['stock_table_agg']}** ({len(df_agg):,} wierszy)"):
+    df_agg = aggregate_stock_df(df_stock, STR)
+    with st.expander(f"**{STR['stock_table_agg']}** ({len(df_agg):,} {STR['suffix_rows']})"):
         st.dataframe(df_agg, width="stretch", height=400, hide_index=True)
 
 
 def render_stock_history(df, selected_mandant_stock, selected_artikel_stock, history_start, history_end, show_cartons_only, STR, widget_prefix: str = ""):
-    st.subheader("📈 Historia liczby palet na magazynie")
+    st.subheader(STR["history_header"])
 
-    # 1. Получаем данные
+    # 1. Get data
     history_df = build_stock_history(
         df=df,
         selected_mandant=selected_mandant_stock,
@@ -207,14 +212,14 @@ def render_stock_history(df, selected_mandant_stock, selected_artikel_stock, his
     )
 
     if history_df is not None and not history_df.empty:
-        # --- ЖЕСТКАЯ ОЧИСТКА ДАННЫХ ПЕРЕД ГРАФИКОМ ---
+        # --- STRICT DATA CLEANING BEFORE PLOTTING ---
         plot_df = history_df.copy()
         
         for col in ["TOTAL_PALLETS", "CARTONS", "OTHER"]:
             if col in plot_df.columns:
-                # Шаг А: Превращаем всё в строку
-                # Шаг Б: Убираем запятые (разделители тысяч)
-                # Шаг В: Превращаем в число (float)
+                # Step A: Convert everything to string
+                # Step B: Remove commas (thousand separators)
+                # Step C: Convert to number (float)
                 plot_df[col] = (
                     plot_df[col]
                     .astype(str)
@@ -222,58 +227,58 @@ def render_stock_history(df, selected_mandant_stock, selected_artikel_stock, his
                     .pipe(pd.to_numeric, errors='coerce')
                 )
         
-        # Гарантируем формат даты
+        # Ensure date format
         plot_df["DATE"] = pd.to_datetime(plot_df["DATE"])
         plot_df = plot_df.sort_values("DATE")
 
-        # 2. Выбор серий
+        # 2. Series selection
         col1, col2, col3 = st.columns(3)
         with col1:
-            show_total = st.checkbox("Pokaż łączną liczbę palet", value=True, key=f"{widget_prefix}h_total")
+            show_total = st.checkbox(STR["history_show_total"], value=True, key=f"{widget_prefix}h_total")
         
         show_cart = False
         show_other = False
         if str(selected_mandant_stock) != "351":
             with col2:
-                show_cart = st.checkbox("Pokaż kartony", value=True, key=f"{widget_prefix}h_cart")
+                show_cart = st.checkbox(STR["history_show_cartons"], value=True, key=f"{widget_prefix}h_cart")
             with col3:
-                show_other = st.checkbox("Pokaż inne opakowania", value=False, key=f"{widget_prefix}h_other")
+                show_other = st.checkbox(STR["history_show_other"], value=False, key=f"{widget_prefix}h_other")
 
-        # 3. Создаем график через go.Figure
+        # 3. Create chart via go.Figure
         fig = go.Figure()
 
         if show_total and "TOTAL_PALLETS" in plot_df.columns:
-            # Используем .tolist(), чтобы Plotly не мог прочитать индексы DataFrame
+            # Use .tolist() so Plotly doesn't read DataFrame indices
             fig.add_trace(go.Scatter(
                 x=plot_df["DATE"].tolist(),
                 y=plot_df["TOTAL_PALLETS"].tolist(),
-                name="Suma wszystkich palet",
+                name=STR["chart_total_label"],
                 mode='lines+markers',
                 line=dict(color='#0078D4', width=3),
-                hovertemplate="Data: %{x}<br>Suma: %{y:,.0f}<extra></extra>"
+                hovertemplate=f"{STR['chart_hover_date']}: %{{x}}<br>{STR['chart_hover_sum']}: %{{y:,.0f}}<extra></extra>"
             ))
 
         if show_cart and "CARTONS" in plot_df.columns:
             fig.add_trace(go.Scatter(
                 x=plot_df["DATE"].tolist(),
                 y=plot_df["CARTONS"].tolist(),
-                name="Tylko kartony",
+                name=STR["chart_cartons_label"],
                 mode='lines+markers',
                 line=dict(color='#E74C3C', width=2),
-                hovertemplate="Data: %{x}<br>Kartony: %{y:,.0f}<extra></extra>"
+                hovertemplate=f"{STR['chart_hover_date']}: %{{x}}<br>{STR['chart_hover_cartons']}: %{{y:,.0f}}<extra></extra>"
             ))
 
-        # 4. Настройка осей (важно!)
+        # 4. Axis configuration (important!)
         fig.update_layout(
             template="plotly_dark",
             hovermode="x unified",
             xaxis=dict(type='date', showgrid=True, gridcolor='rgba(255,255,255,0.1)'),
             yaxis=dict(
-                title="Liczba palet",
+                title=STR["chart_y_axis"],
                 showgrid=True,
                 gridcolor='rgba(255,255,255,0.1)',
-                rangemode="tozero", # Ось Y всегда от 0
-                tickformat=".0f"    # Убираем дробные значения на оси
+                rangemode="tozero", # Y axis always from 0
+                tickformat=".0f"    # Remove decimals on axis
             ),
             height=500,
             margin=dict(l=0, r=0, t=30, b=0),
@@ -282,4 +287,4 @@ def render_stock_history(df, selected_mandant_stock, selected_artikel_stock, his
 
         st.plotly_chart(fig, width="stretch")
     else:
-        st.info("Brak danych do wyświetlenia historii.")
+        st.info(STR["history_no_data"])

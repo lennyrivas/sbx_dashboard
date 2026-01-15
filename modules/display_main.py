@@ -1,39 +1,38 @@
 # modules/display_main.py
-# Отображение таблиц с фильтрами и статистикой палет
+# Display of tables with filters and pallet statistics.
 
 import streamlit as st
 import pandas as pd
 import numpy as np
-from modules.ui_strings import STR
 from utils import classify_pallet, load_packaging_config
 
 
 def show_main_display(filtered_df, deleted_df, STR):
     """
-    Основное отображение:
-    - в режиме 'Usunięte palety' есть правый блок с типами паллет и сводкой,
-      фильтр по artykułom относится к удалённым паллетам;
-    - в режиме 'Przyjęte palety' справа только сводка по artykułom,
-      а сверху слева заголовок/фильтр по przyjętym paletom.
-    Также меняется набор отображаемых колонок.
+    Main display:
+    - in 'Deleted Pallets' mode, there is a right block with pallet types and summary,
+      article filter applies to deleted pallets;
+    - in 'Received Pallets' mode, right side only has article summary,
+      top left has header/filter for received pallets.
+    Also changes the set of displayed columns.
     """
 
-    # Определяем режим по локализованной строке
+    # Determine mode by localized string
     mode_deleted = STR["mode_deleted"]
     mode_received = STR["mode_received"]
 
-    # В main.py в filters.apply_filters используется тот же STR, поэтому
-    # можно восстановить текущий режим из sidebar через session_state
-    # или по признакам данных. Надёжнее — передавать mode явно,
-    # но сейчас используем простую эвристику: если есть OUT_DATE != NaT,
-    # значит был режим удалённых. Для наглядности добавим кнопку выбора.
-    # Однако вы режим уже выбираете в sidebar, поэтому
-    # лучше прокинуть mode из main.py сюда.
-    # Здесь предполагаем, что main.py передаёт st.session_state["current_mode"].
+    # In main.py filters.apply_filters uses the same STR, so
+    # we can restore current mode from sidebar via session_state
+    # or by data characteristics. More reliable — pass mode explicitly,
+    # but now using simple heuristic: if OUT_DATE != NaT,
+    # then it was deleted mode. For clarity add selection button.
+    # However, mode is already selected in sidebar, so
+    # better to pass mode from main.py here.
+    # Here assuming main.py passes st.session_state["current_mode"].
 
     current_mode = st.session_state.get("current_mode", mode_deleted)
 
-    # ---------------- Метрики ----------------
+    # ---------------- Metrics ----------------
     col1, col2, col3 = st.columns([1, 1, 2])
     with col1:
         st.metric("Wybrane wiersze", f"{len(filtered_df):,}")
@@ -46,12 +45,12 @@ def show_main_display(filtered_df, deleted_df, STR):
             f"{int(total_qty):,}" if not np.isnan(total_qty) else "0"
         )
 
-    # ---------------- Общий layout: две колонки ----------------
+    # ---------------- General layout: two columns ----------------
     col_left, col_right = st.columns([1, 1])
 
     mandant = filtered_df["MANDANT"].iloc[0] if not filtered_df.empty else "351"
 
-    # ---------- Ряд 1: заголовки фильтров / типов ----------
+    # ---------- Row 1: Filter / Type Headers ----------
     with col_left:
         if current_mode == mode_deleted:
             st.markdown("### 🔍 Filtr po usuniętych paletach")
@@ -62,13 +61,13 @@ def show_main_display(filtered_df, deleted_df, STR):
         if current_mode == mode_deleted and mandant == "352" and len(deleted_df) > 0:
             st.markdown("### 📊 Suma usuniętych palet według typu")
         else:
-            # чтобы заголовок правой таблицы позже стоял на одной линии
+            # to align right table header later
             st.write(" ")
 
-    # ---------- Ряд 2: фильтр по artykułom / типы паллет ----------
+    # ---------- Row 2: Article Filter / Pallet Types ----------
     with col_left:
-        # источник значений для фильтра — всегда текущие строки,
-        # но логика одинаковая: фильтр по ARTIKELNR
+        # filter source values — always current rows,
+        # but logic is same: filter by ARTIKELNR
         source_df = deleted_df if current_mode == mode_deleted else filtered_df
         available_artikels = sorted(source_df["ARTIKELNR"].unique())
 
@@ -86,7 +85,7 @@ def show_main_display(filtered_df, deleted_df, STR):
                     df_show_base["ARTIKELNR"].isin(selected_artikels_table)
                 ].copy()
                 st.info(f"Filtr: {len(selected_artikels_table)} artykułów")
-        # если нет доступных artykułów, df_show_base остаётся = filtered_df
+        # if no available articles, df_show_base remains = filtered_df
 
     with col_right:
         if current_mode == mode_deleted and mandant == "352" and len(deleted_df) > 0:
@@ -102,7 +101,7 @@ def show_main_display(filtered_df, deleted_df, STR):
                 Palety=("LHMNR", lambda s: s.nunique())
             ).reset_index()
 
-            # Горизонтальное представление: Kartony | Inne opakowania | Palety/ramy (если есть)
+            # Horizontal view: Cartons | Other packaging | Pallets/frames (if any)
             cols_stats = st.columns(len(pallet_stats))
             for idx, row in pallet_stats.iterrows():
                 with cols_stats[idx]:
@@ -110,7 +109,7 @@ def show_main_display(filtered_df, deleted_df, STR):
         else:
             st.write(" ")
 
-    # ---------- Ряд 3: заголовки таблиц ----------
+    # ---------- Row 3: Table Headers ----------
     with col_left:
         st.subheader(STR["table_result"])
     with col_right:
@@ -119,13 +118,13 @@ def show_main_display(filtered_df, deleted_df, STR):
         else:
             st.write(" ")
 
-    # ---------- Ряд 4: сами таблицы (ровно по высоте) ----------
+    # ---------- Row 4: Tables (aligned by height) ----------
 
 
-    # Набор колонок зависит от режима
+    # Column set depends on mode
     if current_mode == mode_deleted:
-        # Usunięte palety:
-        # показываем даты/время przyjęcia i usunięcia + kto/zmiana
+        # Deleted pallets:
+        # show dates/times of receipt and removal + who/change
         cols_show_left = [
             "ARTIKELNR",
             "ARTBEZ1",
@@ -142,7 +141,7 @@ def show_main_display(filtered_df, deleted_df, STR):
             "PLATZ",
         ]
     else:
-        # Przyjęte palety: без kolumny IS_DELETED
+        # Received pallets: without IS_DELETED column
         cols_show_left = [
             "ARTIKELNR",
             "ARTBEZ1",
@@ -153,20 +152,36 @@ def show_main_display(filtered_df, deleted_df, STR):
             "IN_TIME",
             "CREATED_BY",
         ]
-        # OUT_DATE/OUT_TIME при przyjętych можно не показывать, если не нужны
+        # OUT_DATE/OUT_TIME for received can be hidden if not needed
 
 
     with col_left:
         if not df_show_base.empty:
-            # выбираем поле даты для сортировки
+            # select date field for sorting
             sort_col = "OUT_DATE" if (current_mode == mode_deleted and "OUT_DATE" in df_show_base.columns) else "IN_DATE"
 
-            # сначала сортируем по существующей дате, потом выбираем колонки
+            # first sort by existing date, then select columns
             df_sorted = df_show_base.sort_values(by=sort_col, ascending=False)
             df_left = df_sorted[cols_show_left].reset_index(drop=True)
 
+            # Rename columns for display using STR
+            rename_map = {
+                "ARTIKELNR": STR["col_article"],
+                "ARTBEZ1": STR["col_description"],
+                "QUANTITY": STR["col_qty_per_pallet"],
+                "LHMNR": STR["col_pid"],
+                "PLATZ": STR["col_place"],
+                "IN_DATE": STR["col_in_date"],
+                "IN_TIME": STR["col_in_time"],
+                "OUT_DATE": STR["col_out_date"],
+                "OUT_TIME": STR["col_out_time"],
+                "CREATED_BY": STR["col_created_by"],
+                "CHANGED_DATE": STR["col_changed_date"],
+                "CHANGED_TIME": STR["col_changed_time"],
+                "ZUSTAND": STR["col_status"],
+            }
             st.dataframe(
-                df_left,
+                df_left.rename(columns=rename_map),
                 width="stretch",
                 height=350,
                 hide_index=True
@@ -187,16 +202,23 @@ def show_main_display(filtered_df, deleted_df, STR):
             summary["Deleted_Pallets"] = summary["Deleted_Pallets"].fillna(0).astype(int)
             summary["Deleted_Qty"] = summary["Deleted_Qty"].fillna(0)
 
+            # Rename columns for summary table
+            summary_display = summary.rename(columns={
+                "ARTIKELNR": STR["col_article"],
+                "ARTBEZ1": STR["col_description"],
+                "Deleted_Pallets": STR["col_deleted_pallets"],
+                "Deleted_Qty": STR["col_deleted_qty"]
+            })
             st.dataframe(
-                summary.head(10),
+                summary_display.head(10),
                 width="stretch",
                 hide_index=True
             )
         else:
-            # Сообщение об отсутствии данных выравниваем по высоте с левым блоком
+            # Align no data message with left block height
             st.info("Brak usuniętych palet")
 
-    # ---------- Нижний ряд: кнопки скачивания ----------
+    # ---------- Bottom Row: Download Buttons ----------
     st.markdown("---")
     if len(deleted_df) > 0:
         render_downloads(deleted_df, summary, STR)

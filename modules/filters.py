@@ -1,20 +1,19 @@
 # modules/filters.py
-# Фильтрация данных по mandant, артикулу, режиму и датам + валидация дат
+# Data filtration by mandant, article, mode, and dates + date validation.
 
 import streamlit as st
-from modules.ui_strings import STR
 from datetime import datetime, timedelta
 import pandas as pd
 from utils import load_packaging_config
 
-def render_sidebar_filters(df):
+def render_sidebar_filters(df, STR):
     """
-    Рендерит sidebar фильтры и возвращает параметры фильтрации
-    Возвращает: selected_mandant, selected_artikel, mode, date_start, date_end
+    Renders sidebar filters and returns filtration parameters.
+    Returns: selected_mandant, selected_artikel, mode, date_start, date_end
     """
     st.sidebar.header(STR["filters"])
     
-    # Mandant выбор
+    # Mandant selection
     available_mandants = ["351", "352"]
     selected_mandant = st.sidebar.selectbox(
         STR["mandant"], 
@@ -22,13 +21,13 @@ def render_sidebar_filters(df):
         index=0
     )
     
-    # Mode выбор (удаленные или принятые)
+    # Mode selection (deleted or received)
     mode = st.sidebar.radio(
         STR["mode"], 
         (STR["mode_deleted"], STR["mode_received"])
     )
     
-    # Date mode выбор
+    # Date mode selection
     st.sidebar.markdown(STR["date_mode"])
     yesterday = (datetime.now() - timedelta(days=1)).date()
     date_mode = st.sidebar.radio(
@@ -37,7 +36,7 @@ def render_sidebar_filters(df):
         label_visibility="collapsed"
     )
     
-    # Date picker логика
+    # Date picker logic
     if date_mode == STR["single"]:
         sel_date = st.sidebar.date_input(
             STR["single"], 
@@ -57,7 +56,7 @@ def render_sidebar_filters(df):
             value=yesterday, 
             key="date_to"
         )
-        # Значения по умолчанию если даты пустые
+        # Default values if dates are empty
         if start and end:
             date_start = datetime.combine(start, datetime.min.time())
             date_end = datetime.combine(end, datetime.max.time())
@@ -65,12 +64,12 @@ def render_sidebar_filters(df):
             date_start = datetime.combine(yesterday - timedelta(days=6), datetime.min.time())
             date_end = datetime.combine(yesterday, datetime.max.time())
     
-    # ✅ НОВАЯ ПРОВЕРКА: валидация диапазона дат
+    # ✅ NEW CHECK: Date range validation
     if date_start > date_end:
         st.sidebar.error("❌ Błąd: Data 'Od' nie może być późniejsza niż 'Do'")
         st.sidebar.stop()
     
-    # Artikel выбор (после загрузки данных)
+    # Article selection (after data load)
     artikel_options = sorted(
         df.loc[df["MANDANT"] == selected_mandant, "ARTIKELNR"]
         .dropna().unique().tolist()
@@ -83,21 +82,21 @@ def render_sidebar_filters(df):
     
     return selected_mandant, selected_artikel, mode, date_start, date_end
 
-def apply_filters(df, mandant, artikel, mode, date_start, date_end):
+def apply_filters(df, mandant, artikel, mode, date_start, date_end, STR):
     """
-    Применяет фильтры к DataFrame
+    Applies filters to the DataFrame.
     """
-    # Выбор поля даты по режиму
+    # Select date field based on mode
     date_field = "OUT_DATE" if mode == STR["mode_deleted"] else "IN_DATE"
     
-    # Базовый фильтр mandant
+    # Base mandant filter
     mask = (df["MANDANT"] == mandant)
     
-    # Фильтр артикулов
+    # Article filter
     if artikel:
         mask &= df["ARTIKELNR"].isin([a.strip().upper() for a in artikel])
     
-    # Фильтр даты
+    # Date filter
     mask &= df[date_field].between(
         pd.Timestamp(date_start), 
         pd.Timestamp(date_end)
@@ -105,37 +104,26 @@ def apply_filters(df, mandant, artikel, mode, date_start, date_end):
     
     filtered_df = df[mask].copy()
 
-    # IS_DELETED уже посчитан при подготовке df (ZUSTAND != 401)
-    # Здесь только выделяем podzbiór usuniętych palet:
+    # IS_DELETED is already calculated during df preparation (ZUSTAND != 401)
+    # Here we only extract the subset of deleted pallets:
     if "IS_DELETED" in filtered_df.columns:
         deleted_df = filtered_df[filtered_df["IS_DELETED"]].copy()
     else:
-        # Fallback: jeśli z jakiegoś powodu kolumny нет
+        # Fallback: if for some reason the column is missing
         deleted_df = filtered_df.iloc[0:0].copy()
 
     return filtered_df, deleted_df
 
 
-
-# def render_debug_info(mandant, artikel, date_field, date_start, date_end, filtered_count):
-#     """Отображает информацию о фильтрах в sidebar БЕЗ заголовка"""
-#     st.sidebar.markdown("---")
-#     st.sidebar.write(f"**Mandant:** {mandant}")
-#     st.sidebar.write(f"**Artykuły:** {len(artikel) if artikel else 0}")
-#     st.sidebar.write(f"**Data field:** {date_field}")
-#     st.sidebar.write(f"**Date range:** {date_start.date()} - {date_end.date()}")
-#     st.sidebar.write(f"**Wynik filtracji:** {filtered_count:,} wierszy")
-
-
-def render_analysis_filters(df: pd.DataFrame):
+def render_analysis_filters(df: pd.DataFrame, STR):
     """
-    Bardzo kompaktowe filtry dla zakładki 'Analiza zamówień vs palet'
-    w jednej linii.
+    Very compact filters for the 'Orders vs Pallets Analysis' tab
+    in a single line.
     """
 
-    st.subheader("🔍 Filtry analizy")
+    st.subheader(STR["analysis_filters_title"])
     
-    # Generowanie opcji czasu (co 1h od 6:00 do 22:00)
+    # Generate time options (every 1h from 6:00 to 22:00)
     time_options = [""]
     t_curr = datetime(2000, 1, 1, 6, 0)
     t_end_limit = datetime(2000, 1, 1, 22, 0)
@@ -145,82 +133,84 @@ def render_analysis_filters(df: pd.DataFrame):
         time_options.append(label)
         t_curr = t_next
 
-    # Jedna linia: Mandant | Tryb | Daty (tryb + od + do) | Czas | Artykuł
+    # Single line: Mandant | Mode | Dates (mode + from + to) | Time | Article
     col_mandant, col_mode, col_dates, col_time, col_artikel = st.columns(
         [0.6, 1.2, 2.8, 1.0, 1.4]
     )
 
     yesterday = (datetime.now() - timedelta(days=1)).date()
 
-    # Mandant – bardzo wąska kolumna, 3 cyfry
+    # Mandant – very narrow column, 3 digits
     with col_mandant:
         selected_mandant = st.selectbox(
-            "Mandant",
+            STR["mandant"],
             options=["351", "352"],
             index=1,
             key="analysis_mandant",
         )
 
-    # Tryb: dwa radio – Wyjście (OUT_DATE) / Wejście (IN_DATE)
+    # Mode: two radios – Output (OUT_DATE) / Input (IN_DATE)
     with col_mode:
+        options_mode = [STR["opt_mode_out"], STR["opt_mode_in"]]
         mode_label = st.radio(
-            "Tryb",
-            options=["Wyjście", "Wejście"],
+            STR["lbl_mode"],
+            options=options_mode,
             index=0,
-            horizontal=True,           # poziomo
+            horizontal=True,           # horizontal
             key="analysis_mode",
         )
-        date_field = "OUT_DATE" if mode_label == "Wyjście" else "IN_DATE"
+        date_field = "OUT_DATE" if mode_label == STR["opt_mode_out"] else "IN_DATE"
         mode = STR["mode_deleted"] if date_field == "OUT_DATE" else STR["mode_received"]
 
-    # Daty: Dzień / Zakres + Data od + Data do
+    # Dates: Day / Range + Date From + Date To
     with col_dates:
-        # 3 kolumny wewnątrz: [tryb daty] [od] [do]
+        # 3 columns inside: [date mode] [from] [to]
         c_mode, c_from, c_to = st.columns([1.1, 1.1, 1.1])
 
         with c_mode:
+            options_date_mode = [STR["opt_date_day"], STR["range"]]
             date_mode_label = st.radio(
-                "Daty",
-                options=["Dzień", "Zakres"],
+                STR["lbl_dates"],
+                options=options_date_mode,
                 index=0,
-                horizontal=True,        # teraz poziomo
+                horizontal=True,        # now horizontal
                 key="analysis_date_mode",
             )
 
-        if date_mode_label == "Dzień":
+        if date_mode_label == STR["opt_date_day"]:
             with c_from:
                 sel_date = st.date_input(
-                    "Data",
+                    STR["lbl_date"],
                     value=yesterday,
                     key="analysis_date_single",
                 )
             date_start = datetime.combine(sel_date, datetime.min.time())
             date_end = datetime.combine(sel_date, datetime.max.time())
-            # Rezerwujemy miejsce na "Do", ale bez pola przy trybie "Dzień"
+            # Reserve space for "To", but without field in "Day" mode
             with c_to:
-                st.write("")  # pusty placeholder
+                st.write("")  # empty placeholder
                 st.write("")
         else:
             with c_from:
                 start = st.date_input(
-                    "Od",
+                    STR["from"],
                     value=yesterday - timedelta(days=6),
                     key="analysis_date_from",
                 )
             with c_to:
                 end = st.date_input(
-                    "Do",
+                    STR["to"],
                     value=yesterday,
                     key="analysis_date_to",
                 )
             date_start = datetime.combine(start, datetime.min.time())
             date_end = datetime.combine(end, datetime.max.time())
 
-    # Czas (1h)
+    # Time (1h)
     with col_time:
-        if date_mode_label == "Dzień":
+        if date_mode_label == STR["opt_date_day"]:
             selected_time_range = st.selectbox(
-                "Czas (1h)",
+                STR["lbl_time"],
                 options=time_options,
                 index=0,
                 key="analysis_time_range",
@@ -228,7 +218,7 @@ def render_analysis_filters(df: pd.DataFrame):
         else:
             selected_time_range = None
 
-    # Artykuł – z powrotem multiselect, ale w nieco węższej kolumnie
+    # Article – back to multiselect, but in a slightly narrower column
     with col_artikel:
         all_artikel_options = sorted(
             df.loc[df["MANDANT"] == selected_mandant, "ARTIKELNR"]
@@ -237,37 +227,37 @@ def render_analysis_filters(df: pd.DataFrame):
             .tolist()
         )
         selected_artikel = st.multiselect(
-            "Artykuł (ARTIKELNR)",
+            STR["artikel"],
             options=all_artikel_options,
             default=[],
             key="analysis_artikel",
         )
 
-    # Maski filtrów
+    # Filter masks
     mask_global = (df["MANDANT"] == selected_mandant)
 
-    # Filtr po dacie (OUT_DATE lub IN_DATE)
+    # Filter by date (OUT_DATE or IN_DATE)
     mask_global &= df[date_field].between(
         pd.Timestamp(date_start),
         pd.Timestamp(date_end),
     )
 
-    # 👉 Dodatkowo: przy Tryb = Wyjście pokazujemy tylko palety usunięte (ZUSTAND != 401)
-    # To jest część definicji trybu, więc wchodzi do mask_global
+    # 👉 Additionally: for Mode = Output, show only deleted pallets (ZUSTAND != 401)
+    # This is part of the mode definition, so it goes into mask_global
     if date_field == "OUT_DATE":
         if "IS_DELETED" in df.columns:
             mask_global &= df["IS_DELETED"]
         else:
             mask_global &= df["ZUSTAND"] != "401"
 
-    # 1. DataFrame bez filtra artykułów I BEZ FILTRA CZASU (do statystyk porównawczych)
-    # Dzięki temu metryki "Artykuły z rozbieżnością" są niezależne od filtra czasu i artykułu.
+    # 1. DataFrame without article filter AND WITHOUT TIME FILTER (for comparative statistics)
+    # This ensures "Articles with discrepancy" metrics are independent of time and article filters.
     filtered_pallets_no_art_df = df[mask_global].copy()
 
-    # Teraz tworzymy maskę dla widoku (z czasem i artykułami)
+    # Now create mask for view (with time and articles)
     mask_view = mask_global.copy()
 
-    # Filtr czasu (IN_TIME lub OUT_TIME) - tylko dla głównego widoku
+    # Time filter (IN_TIME or OUT_TIME) - only for main view
     if selected_time_range:
         t_start_str, t_end_str = selected_time_range.split(" - ")
         t_start = datetime.strptime(t_start_str, "%H:%M").time()
@@ -275,23 +265,23 @@ def render_analysis_filters(df: pd.DataFrame):
         
         time_col = "OUT_TIME" if date_field == "OUT_DATE" else "IN_TIME"
         
-        # Wektorowe filtrowanie czasu - znacznie szybsze niż .apply()
-        # Najpierw upewniamy się, że kolumna nie ma NaT, bo to psuje porównania
+        # Vectorized time filtering - much faster than .apply()
+        # First ensure column has no NaT, as it breaks comparisons
         valid_time_mask = df[time_col].notna()
-        # Teraz właściwe filtrowanie na poprawnych danych
+        # Now actual filtering on valid data
         mask_view &= valid_time_mask & (df[time_col] >= t_start) & (df[time_col] < t_end)
 
-    # Filtr artykułów - tylko dla głównego widoku
+    # Article filter - only for main view
     if selected_artikel:
         mask_view &= df["ARTIKELNR"].isin([s.strip().upper() for s in selected_artikel])
 
     filtered_pallets_df = df[mask_view].copy()
     
 
-    # Здесь НЕ пересчитываем IS_DELETED – он уже посчитан при загрузке df
-    # и основан на ZUSTAND != 401.
+    # Here we DO NOT recalculate IS_DELETED – it is already calculated during df loading
+    # and based on ZUSTAND != 401.
 
-    # Zwracamy pełną listę artykułów dla mandanta (do ręcznych zamówień), a nie tylko przefiltrowaną
+    # Return full list of articles for mandant (for manual orders), not just filtered ones
     # artikel_options = sorted(filtered_pallets_df["ARTIKELNR"].unique().tolist())
 
 

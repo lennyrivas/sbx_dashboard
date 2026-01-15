@@ -1,5 +1,5 @@
 # modules/data_loader.py
-# Загрузка и нормализация основного CSV файла
+# Loading and normalization of the main CSV file.
 
 import streamlit as st
 import pandas as pd
@@ -54,10 +54,10 @@ def clear_session_state(session_id):
             pass
 
 @st.cache_data
-def load_main_csv(uploaded_file):
+def load_main_csv(uploaded_file, STR):
     """
-    Загружает CSV файл склада с проверкой колонок и нормализацией данных
-    Возвращает: df (нормализованный DataFrame) или None при ошибке
+    Loads the warehouse CSV file with column validation and data normalization.
+    Returns: df (normalized DataFrame) or None on error.
     """
     if uploaded_file is None:
         return None
@@ -77,7 +77,7 @@ def load_main_csv(uploaded_file):
             uploaded_file.seek(0)
             df_raw = pd.read_csv(uploaded_file, sep=';', dtype=str, encoding='latin-1')
         except Exception as e:
-            st.error(f"Błąd wczytywania pliku: {e}")
+            st.error(f"{STR['err_file_load']}{e}")
             return None
     
     # Нормализация колонок
@@ -94,7 +94,7 @@ def load_main_csv(uploaded_file):
     missing = [r for r in required_raw if r not in cols_map]
     
     if missing:
-        st.error(f"Plik nie zawiera wymaganych kolumn: {', '.join(missing)}")
+        st.error(f"{STR['err_missing_cols']}{', '.join(missing)}")
         return None
     
     # Выбираем только нужные колонки и переименовываем

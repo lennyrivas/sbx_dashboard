@@ -1,5 +1,5 @@
 # modules/downloader.py
-# Автоматическая загрузка данных с ihka.schaeflein.de через Selenium (Firefox)
+# Automatic data download from ihka.schaeflein.de using Selenium (Firefox).
 
 import os
 import time
@@ -9,7 +9,6 @@ import io
 import zipfile
 from datetime import datetime
 import streamlit as st
-from modules.ui_strings import STR
 
 # Selenium imports
 from selenium import webdriver
@@ -22,18 +21,23 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.firefox import GeckoDriverManager
 
-def run_ihka_downloader(status_container):
+def run_ihka_downloader(status_container, STR):
     """
-    Запускает процесс автоматического скачивания.
-    status_container: st.empty() или st.status() для отображения прогресса.
-    Возвращает: путь к скачанному файлу или None в случае ошибки.
+    Runs the automatic download process.
+    
+    Args:
+        status_container: st.empty() or st.status() to display progress.
+        STR (dict): Dictionary of localized strings.
+        
+    Returns:
+        str: Path to the downloaded file or None if error.
     """
     
-    # Настройка путей
+    # Path setup
     base_dir = os.getcwd()
     download_dir = os.path.join(base_dir, "temp_downloads")
     
-    # Очистка/создание папки загрузок
+    # Clean/create download directory
     if os.path.exists(download_dir):
         shutil.rmtree(download_dir)
     os.makedirs(download_dir)
@@ -42,49 +46,49 @@ def run_ihka_downloader(status_container):
     current_step = "Start"
     
     try:
-        # --- 1. Инициализация ---
+        # --- 1. Initialization ---
         status_container.write(f"⏳ {STR['dl_step_init']}")
         
         options = Options()
-        # options.add_argument("--headless")  # Запуск без графического интерфейса
+        # options.add_argument("--headless")  # Run without GUI
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
         
-        # Настройка профиля Firefox для автоматического скачивания
+        # Firefox profile settings for automatic download
         options.set_preference("browser.download.folderList", 2)
         options.set_preference("browser.download.manager.showWhenStarting", False)
         options.set_preference("browser.download.dir", download_dir)
         
-        # Отключение Safe Browsing (может блокировать скачивание)
+        # Disable Safe Browsing (might block download)
         options.set_preference("browser.safebrowsing.enabled", False)
         options.set_preference("browser.safebrowsing.malware.enabled", False)
         
-        # Расширенный список типов файлов, чтобы не спрашивать подтверждение сохранения
+        # Extended list of MIME types to avoid save confirmation dialog
         mime_types = [
             "text/csv", "application/csv", "text/plain", 
             "application/vnd.ms-excel", "application/octet-stream"
         ]
         options.set_preference("browser.helperApps.neverAsk.saveToDisk", ",".join(mime_types))
 
-        # Obsługa offline geckodriver (jeśli plik jest w folderze projektu)
+        # Offline geckodriver support (if file exists in project folder)
         gecko_path = os.path.join(os.getcwd(), "geckodriver.exe")
         if os.path.exists(gecko_path):
             service = FirefoxService(executable_path=gecko_path)
         else:
-            # Fallback: próba pobrania (wymaga internetu)
+            # Fallback: try to download (requires internet)
             service = FirefoxService(GeckoDriverManager().install())
             
         driver = webdriver.Firefox(service=service, options=options)
         driver.set_window_size(1920, 1080)
         
-        wait = WebDriverWait(driver, 20) # Тайм-аут 20 секунд
+        wait = WebDriverWait(driver, 20) # 20 seconds timeout
 
-        # --- 2. Логин ---
+        # --- 2. Login ---
         current_step = STR['dl_step_login']
         status_container.write(f"🔐 {current_step}")
         driver.get("http://ihka.schaeflein.de/WebAccess/Auth/Login")
         
-        # Ждем загрузки полей
+        # Wait for fields to load
         user_input = wait.until(EC.presence_of_element_located((By.NAME, "user")))
         pass_input = wait.until(EC.presence_of_element_located((By.NAME, "password")))
         
@@ -92,48 +96,48 @@ def run_ihka_downloader(status_container):
         user_input.send_keys("Opakowania")
         pass_input.clear()
         pass_input.send_keys("Start123!")
-        pass_input.send_keys(Keys.RETURN) # Используем Enter вместо клика
+        pass_input.send_keys(Keys.RETURN) # Use Enter instead of click
 
-        # --- 3. Навигация (Ihka -> LZB -> PIDs) ---
+        # --- 3. Navigation (Ihka -> LZB -> PIDs) ---
         current_step = STR['dl_step_nav']
         status_container.write(f"🧭 {current_step}")
         
-        # Ждем и кликаем на блок Ihka (шаг 6)
-        # Используем CSS селектор по атрибуту data-areakey
+        # Wait and click on Ihka block
+        # Use CSS selector by data-areakey attribute
         
         # === FIX: IFRAME ===
-        # Главная страница содержит iframe с приложением. Нужно переключиться в него.
+        # Main page contains iframe with the app. Need to switch to it.
         try:
             iframe = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "iframe[data-area='WebAccess']")))
             driver.switch_to.frame(iframe)
         except Exception:
-            # Если фрейма нет, пробуем в главном окне (fallback)
+            # If no frame, try in main window (fallback)
             pass
 
         try:
-            # Czekamy na pojawienie się kafelka Ihka
+            # Wait for Ihka tile to appear
             ihka_section = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "section[data-areakey='Ihka']")))
             
-            # Используем JS Click как самый надежный метод для плиток с оверлеем
+            # Use JS Click as the most reliable method for tiles with overlay
             driver.execute_script("arguments[0].click();", ihka_section)
-            time.sleep(3) # Ждем реакции страницы
+            time.sleep(3) # Wait for page reaction
         except Exception as e:
             raise Exception(f"Nie udało się kliknąć w kafelek Ihka. URL: {driver.current_url}. Błąd: {e}")
 
-        # Ждем загрузки меню и кликаем LZB (шаг 7)
-        # Ищем span с текстом LZB. Используем contains для надежности.
+        # Wait for menu load and click LZB
+        # Search for span with text LZB. Use contains for reliability.
         current_step = "Nawigacja: Wybór LZB"
         
         # === FIX: RE-ENTER IFRAME ===
-        # После клика по плитке Ihka страница могла перезагрузиться. Обновляем контекст фрейма.
+        # After clicking Ihka tile, page might have reloaded. Refresh frame context.
         driver.switch_to.default_content()
         try:
-            # FIX: После входа в Ihka активный фрейм - 'Ihka', а 'WebAccess' скрыт.
-            # Ищем видимый фрейм Ihka.
+            # FIX: After entering Ihka, active frame is 'Ihka', 'WebAccess' is hidden.
+            # Search for visible Ihka frame.
             iframe = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "iframe[data-area='Ihka']")))
             driver.switch_to.frame(iframe)
         except Exception:
-            # Fallback: Если Ihka не видна, проверяем WebAccess (например, ошибка перехода)
+            # Fallback: If Ihka not visible, check WebAccess (e.g., transition error)
             try:
                 iframe = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "iframe[data-area='WebAccess']")))
                 driver.switch_to.frame(iframe)
@@ -144,20 +148,20 @@ def run_ihka_downloader(status_container):
         lzb_element = wait.until(EC.element_to_be_clickable((By.XPATH, lzb_xpath)))
         lzb_element.click()
         
-        # Кликаем PIDs with IN and OUT date
+        # Click PIDs with IN and OUT date
         current_step = "Nawigacja: Wybór raportu PIDs"
         pids_xpath = "//span[contains(@class, 'l-title') and contains(text(), 'PIDs with IN and OUT date')]"
         pids_element = wait.until(EC.element_to_be_clickable((By.XPATH, pids_xpath)))
         pids_element.click()
 
-        # --- 4. Параметры ---
+        # --- 4. Parameters ---
         current_step = STR['dl_step_params']
         status_container.write(f"⚙️ {current_step}")
 
-        # Убеждаемся, что мы все еще во фрейме (на случай перезагрузки после клика по отчету)
+        # Ensure we are still in the frame (in case of reload after clicking report)
         driver.switch_to.default_content()
         try:
-            # Здесь также целимся во фрейм Ihka
+            # Target Ihka frame again
             iframe = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "iframe[data-area='Ihka']")))
             driver.switch_to.frame(iframe)
         except Exception:
@@ -167,18 +171,18 @@ def run_ihka_downloader(status_container):
             except Exception:
                 pass
         
-        # Ждем появления заголовка Parameter (шаг 8)
+        # Wait for Parameter header
         param_header = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "header[data-ts='slideupdownclick']")))
         
-        # Проверяем, свернуто ли меню (класс l-inactive у родителя article)
-        # Находим родительский article
+        # Check if menu is collapsed (class l-inactive on parent article)
+        # Find parent article
         param_article = param_header.find_element(By.XPATH, "./..")
         if "l-inactive" in param_article.get_attribute("class"):
-            # Если свернуто - кликаем, чтобы развернуть
+            # If collapsed - click to expand
             param_header.click()
             time.sleep(1)
 
-        # Заполняем поля (шаги 9, 10, 11)
+        # Fill fields
         # DATEFROM
         input_date_from = driver.find_element(By.CSS_SELECTOR, "input[data-parameterkey='DATEFROM']")
         input_date_from.clear()
@@ -195,47 +199,47 @@ def run_ihka_downloader(status_container):
         input_mandant.clear()
         input_mandant.send_keys("352")
 
-        # --- 5. Генерация таблицы ---
+        # --- 5. Table Generation ---
         current_step = STR['dl_step_exec']
         status_container.write(f"🚀 {current_step}")
         
-        # Кнопка "Abfrage sofort ausführen" (шаг 12)
+        # Button "Abfrage sofort ausführen"
         exec_btn = driver.find_element(By.CSS_SELECTOR, "section[data-ts='resulttypetable']")
         exec_btn.click()
 
-        # Ждем появления таблицы (заголовков)
+        # Wait for table (headers)
         # <tr data-ts="columns">
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "tr[data-ts='columns']")))
 
-        # --- 6. Скачивание ---
+        # --- 6. Downloading ---
         current_step = STR['dl_step_download']
         status_container.write(f"⬇️ {current_step}")
         
-        # Кнопка скачивания
+        # Download button
         download_link = driver.find_element(By.CSS_SELECTOR, "a[data-ts='downloadcsv']")
         download_link.click()
 
-        # Ждем появления файла в папке
-        # Максимум 1200 секунд (20 минут) ожидания (для медленного соединения)
+        # Wait for file in folder
+        # Max 1200 seconds (20 minutes) wait (for slow connection)
         downloaded_file = None
         stable_count = 0
         last_size = -1
-        last_part_size = 0 # Для расчета скорости
+        last_part_size = 0 # For speed calculation
         
-        # Placeholder для отображения прогресса скачивания в реальном времени
+        # Placeholder for real-time download progress
         progress_placeholder = status_container.empty()
         
         for _ in range(1200):
-            # 1. Проверяем наличие файлов .part (Firefox в процессе скачивания)
+            # 1. Check for .part files (Firefox downloading)
             part_files = glob.glob(os.path.join(download_dir, "*.part"))
             if part_files:
-                # Отображаем размер .part файла
+                # Display .part file size
                 try:
                     current_part = max(part_files, key=os.path.getmtime)
                     current_size = os.path.getsize(current_part)
                     size_mb = current_size / (1024 * 1024)
                     
-                    # Расчет скорости
+                    # Speed calculation
                     speed_bytes = current_size - last_part_size
                     if speed_bytes < 0: speed_bytes = 0
                     
@@ -248,12 +252,12 @@ def run_ihka_downloader(status_container):
                     pass
 
                 time.sleep(1)
-                stable_count = 0 # Сброс счетчика стабильности
+                stable_count = 0 # Reset stability counter
                 continue
             
             last_part_size = 0
             
-            # 2. Ищем файлы CSV
+            # 2. Look for CSV files
             csv_files = glob.glob(os.path.join(download_dir, "*.csv"))
             if csv_files:
                 current_file = max(csv_files, key=os.path.getmtime)
@@ -262,7 +266,7 @@ def run_ihka_downloader(status_container):
                     size_mb = current_size / (1024 * 1024)
                     
                     if current_size > 0:
-                        # Проверяем, стабилен ли размер (перестал ли файл расти)
+                        # Check if size is stable (file stopped growing)
                         if current_size == last_size:
                             stable_count += 1
                             progress_placeholder.markdown(f"✅ **Pobrano:** {size_mb:.2f} MB (Weryfikacja...)")
@@ -271,10 +275,10 @@ def run_ihka_downloader(status_container):
                             last_size = current_size
                             progress_placeholder.markdown(f"⏳ **Pobieranie:** {size_mb:.2f} MB")
                         
-                        # Если размер не менялся 2 секунды и нет .part -> готово
+                        # If size unchanged for 2 seconds and no .part -> done
                         if stable_count >= 2:
                             downloaded_file = current_file
-                            progress_placeholder.empty() # Очищаем прогресс бар
+                            progress_placeholder.empty() # Clear progress bar
                             break
                 except Exception:
                     pass
@@ -288,7 +292,7 @@ def run_ihka_downloader(status_container):
         return downloaded_file
 
     except WebDriverException as e:
-        # Specyficzny błąd połączenia (np. brak dostępu do sieci wewnętrznej)
+        # Specific connection error (e.g., no internal network access)
         status_container.error(f"{STR['dl_network_error']}")
         return None
     except Exception as e:
@@ -300,7 +304,7 @@ def run_ihka_downloader(status_container):
             driver.quit()
 
 def cleanup_temp_downloads():
-    """Очищает временную папку загрузок"""
+    """Cleans up temporary download folder."""
     base_dir = os.getcwd()
     download_dir = os.path.join(base_dir, "temp_downloads")
     if os.path.exists(download_dir):
@@ -310,9 +314,9 @@ def cleanup_temp_downloads():
             pass
 
 def create_standalone_package():
-    """Tworzy plik ZIP z narzędziem do pobierania offline (skrypt .py + .bat)"""
+    """Creates a ZIP file with the offline download tool (.py script + .bat)."""
     
-    # 1. Treść skryptu Python (kopia logiki z run_ihka_downloader, ale bez Streamlit)
+    # 1. Python script content (copy of run_ihka_downloader logic, but without Streamlit)
     py_code = r'''# -*- coding: utf-8 -*-
 import os
 import time
@@ -321,12 +325,12 @@ import shutil
 import sys
 from datetime import datetime
 
-# 0. Подключение локальных библиотек (если есть папка libs)
+# 0. Include local libraries (if libs folder exists)
 local_libs = os.path.join(os.getcwd(), "libs")
 if os.path.exists(local_libs):
     sys.path.insert(0, local_libs)
 
-# Sprawdzenie bibliotek
+# Check libraries
 try:
     from selenium import webdriver
     from selenium.webdriver.firefox.service import Service as FirefoxService
@@ -355,7 +359,7 @@ def run():
     log("Inicjalizacja przeglądarki Firefox...")
     
     options = Options()
-    # options.add_argument("--headless") # Tryb okienkowy, żeby użytkownik widział co się dzieje
+    # options.add_argument("--headless") # Windowed mode so user sees what happens
     options.set_preference("browser.download.folderList", 2)
     options.set_preference("browser.download.manager.showWhenStarting", False)
     options.set_preference("browser.download.dir", download_dir)
@@ -367,7 +371,7 @@ def run():
     ]
     options.set_preference("browser.helperApps.neverAsk.saveToDisk", ",".join(mime_types))
 
-    # Obsługa offline geckodriver
+    # Offline geckodriver support
     if os.path.exists("geckodriver.exe"):
         service = FirefoxService(executable_path="geckodriver.exe")
     else:
@@ -452,7 +456,7 @@ def run():
         log("Pobieranie pliku...")
         driver.find_element(By.CSS_SELECTOR, "a[data-ts='downloadcsv']").click()
 
-        # Czekanie na plik
+        # Waiting for file
         downloaded_file = None
         last_size = -1
         stable_count = 0
@@ -483,7 +487,7 @@ def run():
         if downloaded_file:
             log(f"SUKCES! Plik pobrany: {os.path.basename(downloaded_file)}")
             log(f"Pełna ścieżka: {downloaded_file}")
-            # Otwórz folder z plikiem (Windows only)
+            # Open folder with file (Windows only)
             try:
                 os.startfile(download_dir)
             except:
@@ -502,7 +506,7 @@ if __name__ == "__main__":
     input("\nNaciśnij Enter, aby zakończyć...")
 '''
 
-    # 2. Treść pliku .bat
+    # 2. .bat file content
     bat_code = r'''@echo off
 setlocal enabledelayedexpansion
 
@@ -512,14 +516,14 @@ echo ==========================================
 
 set CONFIG_FILE=python_config.txt
 
-REM 1. Sprawdzenie czy mamy zapisana sciezke
+REM 1. Check if path is saved
 if exist %CONFIG_FILE% (
     set /p PY_EXE=<%CONFIG_FILE%
 ) else (
     goto :SETUP
 )
 
-REM 2. Weryfikacja czy plik nadal istnieje
+REM 2. Verify if file still exists
 if not exist "!PY_EXE!" (
     echo.
     echo [INFO] Zapisana sciezka do Python nie jest juz poprawna.
@@ -539,7 +543,7 @@ echo.
 set "USER_INPUT="
 set /p USER_INPUT="Sciezka do python.exe: "
 
-REM Usuwanie cudzyslowow (jesli sa)
+REM Remove quotes (if any)
 set PY_EXE=!USER_INPUT:"=!
 
 if "!PY_EXE!"=="" (
@@ -555,7 +559,7 @@ if not exist "!PY_EXE!" (
     goto :SETUP
 )
 
-REM Zapis do pliku
+REM Save to file
 echo !PY_EXE!> %CONFIG_FILE%
 echo.
 echo Sciezka zapisana w %CONFIG_FILE%.
@@ -565,7 +569,7 @@ echo.
 echo Uzywany Python: "!PY_EXE!"
 echo.
 
-REM Sprawdzenie czy PIP jest dostepny
+REM Check if PIP is available
 "!PY_EXE!" -m pip --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo [INFO] PIP nie zostal wykryty. Proba automatycznej instalacji (ensurepip)...
@@ -589,7 +593,7 @@ if %errorlevel% neq 0 (
     )
 )
 
-REM Sprawdzenie czy biblioteki sa juz w folderze 'libs' (tryb offline/przenosny)
+REM Check if libraries are already in 'libs' folder (offline/portable mode)
 if exist "libs" (
     echo [INFO] Wykryto folder 'libs'. Pomijanie instalacji PIP.
 ) else (
@@ -615,7 +619,7 @@ echo Gotowe.
 pause
 '''
 
-    # 3. Treść pliku prepare_libs.bat (dla narzędzia offline)
+    # 3. prepare_libs.bat content (for offline tool)
     prep_code = r'''@echo off
 echo Pobieranie bibliotek dla narzedzia offline...
 if not exist libs mkdir libs
@@ -624,7 +628,7 @@ echo Gotowe.
 pause
 '''
 
-    # Tworzenie ZIP w pamięci
+    # Create ZIP in memory
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("download_ihka.py", py_code)
