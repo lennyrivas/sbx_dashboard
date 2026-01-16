@@ -1,5 +1,5 @@
 {
-  "_description": "Plik zawiera listę artykułów wykluczonych z porównań (dokładne dopasowanie oraz prefiksy).",
+  "_description": "Configuration of excluded articles from comparisons (exact matches and prefixes). / Конфигурация артикулов, исключенных из сравнений (точные совпадения и префиксы).",
   "exact": [
     "DAF K5",
     "DAF R-PALETTEN",

@@ -1,6 +1,6 @@
 # main.py
-# Entry point for the Streamlit application.
-# Handles session management, data loading, language selection, and tab rendering.
+# Entry point for the Warehouse Dashboard application.
+# Точка входа для приложения Warehouse Dashboard.
 
 import streamlit as st
 import pandas as pd
@@ -26,21 +26,25 @@ from modules.removal import render_removal_tab
 from modules.downloader import run_ihka_downloader, cleanup_temp_downloads, create_standalone_package
 
 
-# ==============================
-# Page Configuration
-# ==============================
+# --- Page Configuration ---
+# --- Конфигурация страницы ---
+# Sets the page title, layout, and initial sidebar state.
+# Устанавливает заголовок страницы, макет и начальное состояние боковой панели.
 st.set_page_config(
     page_title="Sprintbox — Raport palet",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ==============================
-# Language Selection
-# ==============================
+# --- Language Selection ---
+# --- Выбор языка ---
+# Initialize language in session state if not present.
+# Инициализация языка в состоянии сессии, если он отсутствует.
 if "lang" not in st.session_state:
     st.session_state["lang"] = "PL"
 
+# Sidebar widget to select language.
+# Виджет боковой панели для выбора языка.
 lang_choice = st.sidebar.selectbox(
     "Language / Język", 
     ["PL", "EN"], 
@@ -50,18 +54,24 @@ if lang_choice != st.session_state["lang"]:
     st.session_state["lang"] = lang_choice
     st.rerun()
 
+# Load translations based on selected language.
+# Загрузка переводов на основе выбранного языка.
 STR = get_translations(st.session_state["lang"])
 st.title(STR["title"])
 
-# ==============================
-# Session Management (UUID)
-# ==============================
+# --- Session Management ---
+# --- Управление сессией ---
+# Generate or retrieve a unique session ID to handle data persistence.
+# Генерация или получение уникального ID сессии для управления сохранением данных.
 try:
+    # Check query parameters for session_id.
+    # Проверка параметров запроса на наличие session_id.
     if "session_id" not in st.query_params:
         st.query_params["session_id"] = str(uuid.uuid4())
     session_id = st.query_params["session_id"]
 except AttributeError:
-    # Fallback for older Streamlit versions (< 1.30.0)
+    # Fallback for older Streamlit versions.
+    # Резервный вариант для старых версий Streamlit.
     params = st.experimental_get_query_params()
     if "session_id" not in params:
         session_id = str(uuid.uuid4())
@@ -70,33 +80,41 @@ except AttributeError:
     else:
         session_id = params["session_id"][0]
 
-# ==============================
-# Data Loading and Preparation
-# ==============================
+# --- Data Loading Section ---
+# --- Секция загрузки данных ---
 
-# --- AUTO DOWNLOAD (IHKA) ---
+# 1. Auto-Download from IHKA.
+# 1. Автозагрузка из IHKA.
 st.sidebar.markdown(f"### {STR['import_data']}")
 
 if st.sidebar.button(STR["btn_auto_download"], type="primary"):
-    # Status container
+    # Create a status container to show progress.
+    # Создаем контейнер статуса для отображения прогресса.
     status_box = st.sidebar.status("Łączenie z IHKA...", expanded=True)
     
-    # Run downloader process
+    # Run the downloader process.
+    # Запускаем процесс загрузки.
     file_path = run_ihka_downloader(status_box, STR)
     
     if file_path:
-        # If file downloaded successfully, load it
+        # If download successful, try to load the file.
+        # Если загрузка прошла успешно, пытаемся загрузить файл.
         try:
             with open(file_path, "rb") as f:
-                # Create in-memory file object to pass to load_main_csv
+                # Create in-memory bytes buffer.
+                # Создаем буфер байтов в памяти.
                 from io import BytesIO
                 mem_file = BytesIO(f.read())
-                # Use full path to avoid [WinError 2] during caching
+                # Set name attribute to full path (needed for caching mechanism).
+                # Устанавливаем атрибут имени в полный путь (нужно для механизма кэширования).
                 mem_file.name = file_path 
                 
-                # Load into DataFrame
+                # Parse CSV into DataFrame.
+                # Парсим CSV в DataFrame.
                 df = load_main_csv(mem_file, STR)
                 if df is not None:
+                    # Save to disk for persistence.
+                    # Сохраняем на диск для персистентности.
                     save_session_to_disk(df, session_id)
                     st.session_state["restored_df"] = df
                     status_box.update(label="Done!", state="complete", expanded=False)
@@ -104,23 +122,29 @@ if st.sidebar.button(STR["btn_auto_download"], type="primary"):
                 else:
                     status_box.update(label=STR["err_format"], state="error")
         except Exception as e:
-            # Hide raw system error and show localized message
+            # Handle errors during processing.
+            # Обработка ошибок во время обработки.
             st.sidebar.error(STR["err_process_download"])
             print(f"Auto-download error: {e}")
         finally:
-            # Cleanup temp files
+            # Clean up temporary files.
+            # Очистка временных файлов.
             cleanup_temp_downloads()
     else:
         status_box.update(label="Błąd", state="error")
 
-# Manual link button if auto-download fails
+# Link for manual download if auto-download fails.
+# Ссылка для ручной загрузки, если автозагрузка не удалась.
 st.sidebar.link_button(STR["btn_open_ihka"], "http://ihka.schaeflein.de/WebAccess/Auth/Login")
 
-# --- OFFLINE TOOL DOWNLOAD ---
+# 2. Offline Tool Download.
+# 2. Скачивание офлайн-инструмента.
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"### {STR['offline_tool']}")
 st.sidebar.caption(STR["offline_desc"])
 
+# Generate and provide download button for the standalone script.
+# Генерируем и предоставляем кнопку скачивания для автономного скрипта.
 zip_file = create_standalone_package()
 st.sidebar.download_button(
     label=STR["download_script"],
@@ -132,6 +156,8 @@ st.sidebar.download_button(
 st.sidebar.caption(STR["wifi_warning"])
 st.sidebar.markdown("---")
 
+# 3. Manual File Upload.
+# 3. Ручная загрузка файла.
 uploaded = st.sidebar.file_uploader(
     STR["upload_csv"],
     type=["csv", "txt"],
@@ -140,16 +166,19 @@ uploaded = st.sidebar.file_uploader(
 
 df = None
 
-# 1. Try loading from upload (priority)
+# Priority 1: Load from uploaded file.
+# Приоритет 1: Загрузка из загруженного файла.
 if uploaded is not None:
     df = load_main_csv(uploaded, STR)
     if df is not None:
-        # Save session to disk to persist across refreshes
+        # Save to disk.
+        # Сохраняем на диск.
         save_session_to_disk(df, session_id)
         if "restored_df" in st.session_state:
             del st.session_state["restored_df"]
 
-# 2. If no upload, try restoring session from disk
+# Priority 2: Restore from session state or disk.
+# Приоритет 2: Восстановление из состояния сессии или диска.
 if df is None:
     if "restored_df" not in st.session_state:
         saved_df = load_session_from_disk(session_id)
@@ -159,16 +188,23 @@ if df is None:
     if "restored_df" in st.session_state:
         df = st.session_state["restored_df"]
         st.sidebar.warning(STR["restore_session"])
+        # Button to clear session data.
+        # Кнопка для очистки данных сессии.
         if st.sidebar.button(STR["clear_data"], key="clear_session_btn"):
             clear_session_state(session_id)
             del st.session_state["restored_df"]
             st.rerun()
 
+# Stop execution if no data is available.
+# Остановка выполнения, если данные недоступны.
 if df is None:
     st.info(STR["no_file"])
     st.stop()
 
-# --- Admin Login (Sidebar) ---
+# --- Admin Login ---
+# --- Вход администратора ---
+# Sidebar form for admin authentication.
+# Форма в боковой панели для аутентификации администратора.
 with st.sidebar:
     st.markdown("---")
     with st.expander(STR["admin_login"]):
@@ -176,9 +212,8 @@ with st.sidebar:
             admin_password = st.text_input(STR["password"], type="password", key="admin_pass", label_visibility="collapsed", placeholder=STR["password"])
             st.form_submit_button(STR["login"], width="stretch")
 
-# ==============================
-# Tabs
-# ==============================
+# --- Tabs Configuration ---
+# --- Конфигурация вкладок ---
 tabs_labels = [
     STR["tab_analysis"],
     STR["tab_stock"],
@@ -186,7 +221,8 @@ tabs_labels = [
     STR["tab_removal"],
 ]
 
-# Retrieve password from st.secrets (or default "admin" if secrets missing)
+# Check admin password.
+# Проверка пароля администратора.
 try:
     correct_password = st.secrets["ADMIN_PASSWORD"]
 except Exception:
@@ -202,10 +238,13 @@ tab_stock = tabs[1]
 tab_stats = tabs[2]
 tab_removal = tabs[3]
 
+# --- Tab 1: Analysis (Orders vs Pallets) ---
+# --- Вкладка 1: Анализ (Заказы vs Паллеты) ---
 with tab_analysis:
     st.header(STR["analysis_header"])
 
-    # 👉 Filters are now rendered here, in this tab
+    # Render filters specific to analysis.
+    # Рендеринг фильтров, специфичных для анализа.
     (
         selected_mandant,
         selected_artikel,
@@ -217,11 +256,13 @@ with tab_analysis:
         filtered_pallets_no_art_df,
     ) = render_analysis_filters(df, STR)
 
-    # Calculate deleted_pallets and metrics after filtering
+    # Load packaging config for metrics.
+    # Загрузка конфигурации упаковки для метрик.
     kartony_prefixes, _ = load_packaging_config()
 
+    # Display metrics based on mode (Received vs Deleted).
+    # Отображение метрик в зависимости от режима (Принятые vs Удаленные).
     if mode == STR["mode_received"]:
-        # Received Mode: show received pallets and packaging breakdown
         total_received = len(filtered_pallets_df)
         
         if selected_mandant == "352":
@@ -242,7 +283,6 @@ with tab_analysis:
             st.metric(STR["received_pallets"], f"{total_received:,}")
 
     else:
-        # Output Mode: keep old logic (deleted)
         deleted_pallets = filtered_pallets_df[filtered_pallets_df["IS_DELETED"]]
 
         if selected_mandant == "352":
@@ -262,6 +302,8 @@ with tab_analysis:
             # Mandant 351: only deleted pallets
             st.metric(STR["deleted_pallets"], f"{len(deleted_pallets):,}")
 
+    # Render the main orders table and comparison logic.
+    # Рендеринг основной таблицы заказов и логики сравнения.
     render_orders_tab(
         artikel_options,
         filtered_pallets_df,
@@ -274,21 +316,28 @@ with tab_analysis:
         STR=STR
     )
 
+# --- Tab 2: Stock Levels ---
+# --- Вкладка 2: Уровни запасов ---
 with tab_stock:
     render_stock_tab(
-        df,                # Full cleaned DataFrame
-        selected_mandant,  # Current mandant from analysis filters
-        selected_artikel,  # Current list of articles
+        df,                # Full DataFrame / Полный DataFrame
+        selected_mandant,  # Selected mandant / Выбранный мандант
+        selected_artikel,  # Selected articles / Выбранные артикулы
         STR,
     )
 
+# --- Tab 3: Statistics ---
+# --- Вкладка 3: Статистика ---
 with tab_stats:
     render_stats_tab(df, STR)
 
+# --- Tab 4: Pallet Removal ---
+# --- Вкладка 4: Удаление паллет ---
 with tab_removal:
     render_removal_tab(df, STR)
 
+# --- Tab 5: Settings (Admin Only) ---
+# --- Вкладка 5: Настройки (Только админ) ---
 if len(tabs) > 4:
     with tabs[4]:
-        # Settings available only for admin
         render_settings_tab(STR)

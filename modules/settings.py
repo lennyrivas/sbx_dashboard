@@ -1,5 +1,6 @@
 # modules/settings.py
-# Pallet type settings.
+# Pallet type settings and configuration management.
+# Настройки типов паллет и управление конфигурацией.
 
 import streamlit as st
 from utils import (
@@ -12,7 +13,8 @@ from utils import (
 )
 
 def init_settings():
-    """Initialize default settings."""
+    # Initialize default settings in session state if they don't exist.
+    # Инициализация настроек по умолчанию в состоянии сессии, если они не существуют.
     defaults = {
         "cartons": ["83090", "676", "568", "ZC", "826", "3807486", 
                    "PRZEKLADKI CIETE", "RAMKA IPUV", "TCM-ECE", "TKAS"],
@@ -27,20 +29,27 @@ def init_settings():
     return defaults
 
 def render_settings_tab(STR):
-    """Extended settings for exceptions + packaging."""
+    # Renders the 'Settings' tab with extended configuration for exceptions and packaging.
+    # Рендерит вкладку 'Настройки' с расширенной конфигурацией для исключений и упаковки.
+    
     st.header(STR["settings_header"])
     st.markdown("---")
 
-    # 1. Article Exceptions
+    # --- 1. Article Exceptions ---
+    # --- 1. Исключения артикулов ---
     st.subheader(STR["settings_sect1_header"])
     st.caption(STR["settings_sect1_caption"])
     st.caption(STR["settings_sect1_explanation"])
     
+    # Load current exceptions from file.
+    # Загрузка текущих исключений из файла.
     exact_list, prefix_list = load_excluded_articles()
 
     with st.container():
         col1, col2 = st.columns(2)
         with col1:
+            # Exact match input area.
+            # Поле ввода для точного совпадения.
             st.markdown(STR["settings_exact_match_header"])
             st.caption(STR["settings_exact_match_caption"])
             exact_input = st.text_area(
@@ -51,6 +60,8 @@ def render_settings_tab(STR):
                 label_visibility="collapsed"
             )
         with col2:
+            # Prefix match input area.
+            # Поле ввода для совпадения по префиксу.
             st.markdown(STR["settings_prefix_header"])
             st.caption(STR["settings_prefix_caption"])
             prefix_input = st.text_area(
@@ -61,6 +72,8 @@ def render_settings_tab(STR):
                 label_visibility="collapsed"
             )
         
+        # Save button for exceptions.
+        # Кнопка сохранения исключений.
         if st.button(STR["settings_btn_save_exceptions"], type="primary", width="stretch"):
             new_exact = [x.strip() for x in exact_input.splitlines() if x.strip()]
             new_prefix = [x.strip() for x in prefix_input.splitlines() if x.strip()]
@@ -69,15 +82,20 @@ def render_settings_tab(STR):
 
     st.markdown("---")
 
-    # 2. Packaging Configuration
+    # --- 2. Packaging Configuration ---
+    # --- 2. Конфигурация упаковки ---
     st.subheader(STR["settings_sect2_header"])
     st.caption(STR["settings_sect2_caption"])
     
+    # Load current packaging config.
+    # Загрузка текущей конфигурации упаковки.
     kartony_prefixes, other_prefixes = load_packaging_config()
 
     with st.container():
         col3, col4 = st.columns(2)
         with col3:
+            # Cartons prefixes input.
+            # Ввод префиксов картонов.
             st.markdown(STR["settings_cartons_header"])
             st.caption(STR["settings_cartons_caption"])
             kartony_input = st.text_area(
@@ -88,6 +106,8 @@ def render_settings_tab(STR):
                 label_visibility="collapsed"
             )
         with col4:
+            # Other packaging prefixes input.
+            # Ввод префиксов другой упаковки.
             st.markdown(STR["settings_other_pkg_header"])
             st.caption(STR["settings_other_pkg_caption"])
             other_input = st.text_area(
@@ -98,6 +118,8 @@ def render_settings_tab(STR):
                 label_visibility="collapsed"
             )
 
+        # Save button for packaging config.
+        # Кнопка сохранения конфигурации упаковки.
         if st.button(STR["settings_btn_save_packaging"], type="primary", width="stretch"):
             new_kartony = [x.strip() for x in kartony_input.splitlines() if x.strip()]
             new_other = [x.strip() for x in other_input.splitlines() if x.strip()]
@@ -106,16 +128,21 @@ def render_settings_tab(STR):
 
     st.markdown("---")
 
-    # 3. Strategies
+    # --- 3. Strategies ---
+    # --- 3. Стратегии ---
     st.subheader(STR["settings_sect3_header"])
     st.caption(STR["settings_sect3_caption"])
     
+    # Load current strategies.
+    # Загрузка текущих стратегий.
     strategies = load_packages_strategies()
     pallet_priority_prefixes = strategies.get("pallet_priority", {}).get("prefixes", [])
     
     with st.container():
         col5, col6 = st.columns([1, 1])
         with col5:
+            # Pallet priority prefixes input.
+            # Ввод префиксов приоритета паллет.
             st.markdown(STR["settings_strat_prefixes_header"])
             st.caption(STR["settings_strat_prefixes_caption"])
             strat_input = st.text_area(
@@ -126,10 +153,14 @@ def render_settings_tab(STR):
                 label_visibility="collapsed"
             )
             
+            # Save button for strategies.
+            # Кнопка сохранения стратегий.
             if st.button(STR["settings_btn_save_strategies"], type="primary", width="stretch"):
                 new_strat_prefixes = [x.strip() for x in strat_input.splitlines() if x.strip()]
                 if save_packages_strategies(new_strat_prefixes):
                     st.success(STR["settings_msg_strategies_saved"])
         
         with col6:
+            # Explanation of the strategy.
+            # Объяснение стратегии.
             st.info(STR["settings_strat_explanation"])

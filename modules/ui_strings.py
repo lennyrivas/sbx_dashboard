@@ -1,7 +1,11 @@
 # modules/ui_strings.py
-# UI strings configuration for multilingual support (PL/EN).
-# This file contains a dictionary with translations for all user interface elements.
+# Configuration for User Interface strings to support multiple languages (Polish/English).
+# Конфигурация строк пользовательского интерфейса для поддержки нескольких языков (Польский/Английский).
 
+# Dictionary containing all text elements used in the application.
+# Словарь, содержащий все текстовые элементы, используемые в приложении.
+# Structure: { "LANGUAGE_CODE": { "key": "Translated Text", ... } }
+# Структура: { "КОД_ЯЗЫКА": { "ключ": "Переведенный текст", ... } }
 TRANSLATIONS = {
     "PL": {
         "title": "Warehouse — Raport palet",
@@ -528,13 +532,17 @@ TRANSLATIONS = {
 }
 
 def get_translations(lang_code="PL"):
-    """
-    Retrieves the translation dictionary for the specified language code.
-    
-    Args:
-        lang_code (str): Language code ('PL' or 'EN').
-        
-    Returns:
-        dict: Dictionary containing UI strings.
-    """
+    # Retrieves the translation dictionary for the specified language code.
+    # Получает словарь переводов для указанного кода языка.
+    #
+    # Args:
+    #     lang_code (str): The language code (e.g., 'PL', 'EN'). Defaults to 'PL'.
+    #     lang_code (str): Код языка (например, 'PL', 'EN'). По умолчанию 'PL'.
+    #
+    # Returns:
+    #     dict: A dictionary of UI strings for the selected language.
+    #     dict: Словарь строк интерфейса для выбранного языка.
+    #
+    # Logic: Returns the dictionary for lang_code. If not found, falls back to 'PL'.
+    # Логика: Возвращает словарь для lang_code. Если не найден, возвращает 'PL'.
     return TRANSLATIONS.get(lang_code, TRANSLATIONS["PL"])

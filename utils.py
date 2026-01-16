@@ -1,3 +1,7 @@
+# utils.py
+# Utility functions for configuration management and helper logic.
+# Вспомогательные функции для управления конфигурацией и служебной логики.
+
 import json
 import os
 import streamlit as st
@@ -9,7 +13,9 @@ PACKAGES_STRATEGIES_FILE = "packages_strategies.json"
 # --- LOADERS / SAVERS (Abstraction Layer) ---
 
 def load_excluded_articles():
-    """Wczytuje listę wykluczonych artykułów z pliku lokalnego"""
+    # Loads the list of excluded articles from the local JSON file.
+    # Загружает список исключенных артикулов из локального JSON-файла.
+    # Returns: Tuple (exact_matches_list, prefixes_list).
     if os.path.isfile(EXCLUDED_ARTICLES_FILE):
         try:
             with open(EXCLUDED_ARTICLES_FILE, "r", encoding="utf-8") as f:
@@ -21,7 +27,8 @@ def load_excluded_articles():
     return [], []
 
 def save_excluded_articles(exact_list, prefix_list):
-    """Zapisuje wykluczone artykuły do pliku lokalnego"""
+    # Saves the list of excluded articles to the local JSON file.
+    # Сохраняет список исключенных артикулов в локальный JSON-файл.
     data = {
         "_description": "Plik zawiera listę artykułów wykluczonych z porównań (dokładne dopasowanie oraz prefiksy).",
         "exact": exact_list, 
@@ -37,7 +44,9 @@ def save_excluded_articles(exact_list, prefix_list):
         return False
 
 def load_packaging_config():
-    """Wczytuje konfigurację opakowań z pliku lokalnego"""
+    # Loads packaging configuration (cartons vs others) from JSON.
+    # Загружает конфигурацию упаковки (картоны vs остальные) из JSON.
+    # Returns: Tuple (cartons_prefixes, other_prefixes).
     if os.path.isfile(PACKAGING_CONFIG_FILE):
         try:
             with open(PACKAGING_CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -49,7 +58,8 @@ def load_packaging_config():
     return ["83090", "ZC", "568", "676", "826"], []
 
 def save_packaging_config(kartony_prefixes, other_prefixes):
-    """Zapisuje konfigurację opakowań do pliku lokalnego"""
+    # Saves packaging configuration to JSON.
+    # Сохраняет конфигурацию упаковки в JSON.
     data = {
         "_description": "Konfiguracja prefiksów dla kartonów i innych opakowań (używane głównie dla Mandanta 352).",
         "kartony_prefixes": kartony_prefixes, 
@@ -65,7 +75,8 @@ def save_packaging_config(kartony_prefixes, other_prefixes):
         return False
 
 def load_packages_strategies():
-    """Wczytuje strategie pakowania z pliku lokalnego"""
+    # Loads packaging strategies (e.g., pallet priority) from JSON.
+    # Загружает стратегии упаковки (например, приоритет паллет) из JSON.
     default_strategies = {
         "pallet_priority": {"prefixes": ["202671"]}
     }
@@ -79,10 +90,11 @@ def load_packages_strategies():
     return default_strategies
 
 def save_packages_strategies(pallet_priority_prefixes):
-    """Zapisuje strategie pakowania do pliku lokalnego"""
+    # Saves packaging strategies to JSON.
+    # Сохраняет стратегии упаковки в JSON.
     current = load_packages_strategies()
     
-    # Aktualizacja prefiksów
+    # Update prefixes for pallet priority strategy.
     if "pallet_priority" not in current:
         current["pallet_priority"] = {"description": "", "prefixes": [], "examples": []}
     
@@ -103,19 +115,24 @@ def classify_pallet(
     pallets_frames_prefixes: list[str],   # можно оставить параметр, но не использовать
     other_packaging_prefixes: list[str],
 ) -> str:
-    """
-    Простая классификация:
-    - "Kartony"      – если ARTIKELNR НАЧИНАЕТСЯ с одного из kartony_prefixes
-    - "Inne opakowania" – всё остальное
-    """
+    # Classifies a pallet based on its article number.
+    # Классифицирует паллету на основе номера артикула.
+    #
+    # Logic:
+    # - "Kartony" (Cartons): If ARTIKELNR starts with any prefix in kartony_prefixes.
+    # - "Inne opakowania" (Other): Everything else.
+    #
+    # Логика:
+    # - "Kartony" (Картоны): Если ARTIKELNR начинается с любого префикса из kartony_prefixes.
+    # - "Inne opakowania" (Другие): Все остальное.
 
     art = str(artikelnr).strip().upper()
 
-    # 1) Kartony – строго по НАЧАЛУ строки (prefix)
+    # 1. Check for Cartons (strict prefix match).
     for pref in kartony_prefixes:
         p = str(pref).strip().upper()
         if p and art.startswith(p):
             return "Kartony"
 
-    # 2) Всё, что не попало в kartony, считаем "Inne opakowania"
+    # 2. Default to Other.
     return "Inne opakowania"

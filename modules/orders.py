@@ -1,5 +1,6 @@
 # modules/orders.py
 # Order handling: files + manual entries, with delayed processing.
+# Обработка заказов: файлы + ручной ввод, с отложенной обработкой.
 
 import streamlit as st
 import pandas as pd
@@ -8,19 +9,22 @@ import traceback
 import sys
 import re
 
-# Cache for file-based orders
+# Initialize cache for file-based orders in session state.
+# Инициализация кэша для заказов из файлов в состоянии сессии.
 if "orders_cache" not in st.session_state:
     st.session_state["orders_cache"] = {
-        "files_keys": None,      # file identifiers
-        "orders_all": None,
-        "orders_agg": None,
+        "files_keys": None,      # Unique identifiers for uploaded files / Уникальные идентификаторы загруженных файлов
+        "orders_all": None,      # DataFrame with all order rows / DataFrame со всеми строками заказов
+        "orders_agg": None,      # Aggregated orders by article / Агрегированные заказы по артикулу
     }
 
 
 
 # ===== Settings for order structure recognition =====
+# ===== Настройки для распознавания структуры заказа =====
 
-# Anchor articles (minimal set, can be expanded)
+# Set of known "anchor" articles used to identify the article column.
+# Набор известных "якорных" артикулов, используемых для идентификации колонки артикула.
 KNOWN_ARTS_SET = {
     "1",
     "2",
@@ -38,7 +42,8 @@ KNOWN_ARTS_SET = {
     "8309021164",
 }
 
-# Possible headers for the article column
+# List of potential headers for the article column.
+# Список возможных заголовков для колонки артикула.
 ARTICLE_HEADER_CANDIDATES = [
     "NR MATERIALU",
     "NR MATERIAU",
@@ -48,12 +53,10 @@ ARTICLE_HEADER_CANDIDATES = [
 ]
 
 def _looks_like_article(value: str) -> bool:
-    """
-    Simple check if a value looks like an article:
-    - not empty
-    - not just '0'
-    - contains only letters, numbers, spaces, dashes.
-    """
+    # Checks if a value resembles an article number.
+    # Проверяет, похоже ли значение на номер артикула.
+    # Criteria: not empty, not '0', contains alphanumeric chars/dashes/spaces.
+    # Критерии: не пустое, не '0', содержит буквенно-цифровые символы/тире/пробелы.
     v = str(value).strip()
     if not v:
         return False
@@ -64,22 +67,17 @@ def _looks_like_article(value: str) -> bool:
 
 
 def detect_order_structure(df_o):
-    """
-    Attempts to determine:
-      - index of the article column (art_col)
-      - index of the row where data starts (data_start_row)
+    # Attempts to determine the structure of the order file.
+    # Пытается определить структуру файла заказа.
+    # Returns a dict with 'art_col' (index) and 'data_start_row' (index).
+    # Возвращает словарь с 'art_col' (индекс) и 'data_start_row' (индекс).
+    
+    # Limit the check to the top 200 rows for performance.
+    # Ограничиваем проверку первыми 200 строками для производительности.
+    max_rows_to_check = min(200, df_o.shape[0])
 
-    Logic:
-      1) First search for a header row containing text from ARTICLE_HEADER_CANDIDATES.
-      2) If found — art_col = that column, data_start_row = next row.
-      3) If not found — search for a column where:
-           - many values look like articles,
-           - known articles from KNOWN_ARTS_SET appear.
-         As data_start_row, take the first row where something looking like an article appears.
-    """
-    max_rows_to_check = min(200, df_o.shape[0])  # limit to top part of table
-
-    # --- Step 1: search header by ARTICLE_HEADER_CANDIDATES ---
+    # --- Step 1: Search for a header row using known candidates ---
+    # --- Шаг 1: Поиск строки заголовка с использованием известных кандидатов ---
     art_col_by_header = None
     header_row_idx = None
 
@@ -95,7 +93,8 @@ def detect_order_structure(df_o):
             break
 
     if art_col_by_header is not None:
-        # Found article column header
+        # Header found.
+        # Заголовок найден.
         art_col = art_col_by_header
         data_start_row = header_row_idx + 1
         return {
@@ -103,7 +102,8 @@ def detect_order_structure(df_o):
             "data_start_row": data_start_row,
         }
 
-    # --- Step 2: no explicit header — search by content ---
+    # --- Step 2: Heuristic search by content (if no header found) ---
+    # --- Шаг 2: Эвристический поиск по содержимому (если заголовок не найден) ---
     best_col = None
     best_score = -1
     best_first_row = None
@@ -124,21 +124,22 @@ def detect_order_structure(df_o):
 
             v_upper = v.upper()
 
-            # Anchor articles
+            # Check for known anchor articles.
+            # Проверка на известные якорные артикулы.
             if v_upper in KNOWN_ARTS_SET:
                 known_hits += 1
                 if first_article_row is None:
                     first_article_row = row_idx
 
-            # Looks like article
+            # Check if value looks like an article.
+            # Проверка, похоже ли значение на артикул.
             if _looks_like_article(v):
                 article_like += 1
                 if first_article_row is None:
                     first_article_row = row_idx
 
-        # Column scoring:
-        #  - matches with KNOWN_ARTS_SET are most important
-        #  - then total count of "article-like" values
+        # Score the column: matches with known articles are weighted higher.
+        # Оценка колонки: совпадения с известными артикулами имеют больший вес.
         score = known_hits * 10 + article_like
 
         if score > best_score and article_like > 0:
@@ -147,15 +148,16 @@ def detect_order_structure(df_o):
             best_first_row = first_article_row
 
     if best_col is None:
-        # Found nothing — return default to not break old logic
+        # Fallback if nothing is found.
+        # Резервный вариант, если ничего не найдено.
         return {
             "art_col": 0,
-            "data_start_row": 2,  # as it was before
+            "data_start_row": 2,
         }
 
-    # If column found by content
+    # Column found by content analysis.
+    # Колонка найдена путем анализа содержимого.
     art_col = best_col
-    # Data start is the first row where an article appeared
     data_start_row = best_first_row if best_first_row is not None else 2
 
     return {
@@ -167,22 +169,14 @@ def detect_order_structure(df_o):
 
 
 # ---------- Parsing a single order file ----------
+# ---------- Парсинг одного файла заказа ----------
 
 def parse_order_file_to_df(fobj):
-    """
-    Reads a single order file (XLSX in OrderMasterSheet format)
-    WITHOUT using pandas.read_excel / openpyxl, to avoid wildcard error.
-
-    Expected OrderMasterSheet structure:
-    - column A: Materialnummer / Nr materiau (ARTIKELNR)
-    - column B: Artikelgesamtmenge / Quantity (total quantity)
-    - column C: pallet count (no header)
-    - column D: pcs/bundle
-    Other columns ignored.
-
-    Returns DataFrame with columns:
-      ARTIKELNR (upper), ORDER_PALLETS (int), ORDER_QTY (float)
-    """
+    # Reads a single order file (XLSX/CSV) and extracts relevant columns.
+    # Читает один файл заказа (XLSX/CSV) и извлекает соответствующие колонки.
+    # Uses low-level XML parsing for XLSX to avoid 'wildcard' errors in openpyxl.
+    # Использует низкоуровневый парсинг XML для XLSX, чтобы избежать ошибок 'wildcard' в openpyxl.
+    
     import io
     import zipfile
     import xml.etree.ElementTree as ET
@@ -190,7 +184,8 @@ def parse_order_file_to_df(fobj):
     name = getattr(fobj, "name", "uploaded")
     df_o = None
 
-    # CSV / TXT – for future
+    # Handle CSV/TXT files.
+    # Обработка CSV/TXT файлов.
     if name.lower().endswith((".csv", ".txt")):
         fobj.seek(0)
         try:
@@ -208,7 +203,8 @@ def parse_order_file_to_df(fobj):
             st.error(f"Błąd czytania pliku zamówienia {name}: {e}")
             return None
 
-    # ---- XLSX: low-level XML reading ----
+    # Handle XLSX files using direct XML parsing.
+    # Обработка XLSX файлов с использованием прямого парсинга XML.
     else:
         try:
             fobj.seek(0)
@@ -216,7 +212,8 @@ def parse_order_file_to_df(fobj):
             fobj.seek(0)
 
             with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as zf:
-                # workbook.xml – search for order sheet
+                # Find the 'OrderMasterSheet' in workbook.xml.
+                # Находим 'OrderMasterSheet' в workbook.xml.
                 with zf.open("xl/workbook.xml") as wb:
                     wb_tree = ET.parse(wb)
                     wb_root = wb_tree.getroot()
@@ -230,6 +227,8 @@ def parse_order_file_to_df(fobj):
                         sheet_id = r_id
                         break
                 if sheet_id is None:
+                    # Fallback to the first sheet if specific name not found.
+                    # Резервный вариант: первый лист, если конкретное имя не найдено.
                     first_sheet = wb_root.find("ns:sheets/ns:sheet", ns)
                     if first_sheet is None:
                         raise ValueError("Brak arkuszy w pliku XLSX")
@@ -237,7 +236,8 @@ def parse_order_file_to_df(fobj):
                         "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
                     )
 
-                # workbook.xml.rels – path to sheet file
+                # Find the path to the sheet file in workbook.xml.rels.
+                # Находим путь к файлу листа в workbook.xml.rels.
                 with zf.open("xl/_rels/workbook.xml.rels") as rels:
                     rels_tree = ET.parse(rels)
                     rels_root = rels_tree.getroot()
@@ -254,12 +254,14 @@ def parse_order_file_to_df(fobj):
                 if not sheet_path.startswith("xl/"):
                     sheet_path = "xl/" + sheet_path
 
-                # XML of selected sheet
+                # Parse the sheet XML.
+                # Парсим XML листа.
                 with zf.open(sheet_path) as sf:
                     sheet_tree = ET.parse(sf)
                     sheet_root = sheet_tree.getroot()
 
-                # sharedStrings – texts
+                # Load shared strings (text values).
+                # Загружаем общие строки (текстовые значения).
                 shared_strings = []
                 if "xl/sharedStrings.xml" in zf.namelist():
                     with zf.open("xl/sharedStrings.xml") as ssf:
@@ -269,7 +271,8 @@ def parse_order_file_to_df(fobj):
                         t = si.find("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t")
                         shared_strings.append(t.text if t is not None else "")
 
-                # rows + cells
+                # Extract rows and cells.
+                # Извлекаем строки и ячейки.
                 rows_data = []
                 for row_elem in sheet_root.findall(
                     ".//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row"
@@ -279,6 +282,8 @@ def parse_order_file_to_df(fobj):
                     for cell in row_elem.findall(
                         "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}c"
                     ):
+                        # Determine column index from cell reference (e.g., 'A1').
+                        # Определяем индекс колонки из ссылки на ячейку (например, 'A1').
                         cell_ref = cell.attrib.get("r", "")
                         col_letters = "".join(ch for ch in cell_ref if ch.isalpha())
                         col_idx = 0
@@ -286,16 +291,22 @@ def parse_order_file_to_df(fobj):
                             col_idx = col_idx * 26 + (ord(ch.upper()) - ord("A") + 1)
                         col_idx -= 1  # 0-based
 
+                        # Fill gaps for empty cells.
+                        # Заполняем пропуски для пустых ячеек.
                         while last_col_idx + 1 < col_idx:
                             row_values.append("")
                             last_col_idx += 1
 
+                        # Get cell value.
+                        # Получаем значение ячейки.
                         v = cell.find(
                             "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}v"
                         )
                         cell_type = cell.attrib.get("t")
                         if v is not None and v.text is not None:
                             if cell_type == "s":
+                                # Shared string lookup.
+                                # Поиск в общих строках.
                                 idx = int(v.text)
                                 value = shared_strings[idx] if 0 <= idx < len(shared_strings) else ""
                             else:
@@ -312,6 +323,8 @@ def parse_order_file_to_df(fobj):
                 if not rows_data:
                     raise ValueError("Brak danych w arkuszu zamówień.")
 
+                # Create DataFrame from extracted data.
+                # Создаем DataFrame из извлеченных данных.
                 max_cols = max(len(r) for r in rows_data)
                 rows_padded = [r + [""] * (max_cols - len(r)) for r in rows_data]
                 df_o = pd.DataFrame(rows_padded)
@@ -323,7 +336,8 @@ def parse_order_file_to_df(fobj):
             st.error(f"Błąd czytania pliku zamówienia {name}: {e}")
             return None
 
-    # ==== NEW LOGIC: determine data structure by art_col and data_start_row ====
+    # --- Determine data structure ---
+    # --- Определение структуры данных ---
     if df_o.shape[1] < 1:
         st.error(f"Plik {name} ma za mało kolumn (oczekiwane >= 1).")
         return None
@@ -332,14 +346,16 @@ def parse_order_file_to_df(fobj):
     art_col = structure["art_col"]
     data_start_row = structure["data_start_row"]
 
-    # Data section: everything below data_start_row
+    # Slice the DataFrame to get the data section.
+    # Срезаем DataFrame, чтобы получить секцию данных.
     df_data = df_o.iloc[data_start_row:, :].copy()
 
-    # EXTRACT article column
+    # Extract the article column.
+    # Извлекаем колонку артикула.
     artikel_col = df_data.iloc[:, art_col].astype(str)
 
-    # Candidate columns to the right of article:
-    # check max 5 columns and discard obviously textual ones.
+    # Identify potential numeric columns to the right of the article column.
+    # Идентифицируем потенциальные числовые колонки справа от колонки артикула.
     right_cols_indices = []
     max_right_span = 5
 
@@ -349,43 +365,37 @@ def parse_order_file_to_df(fobj):
             break
 
         col_raw = df_data.iloc[:, idx].astype(str)
-        # Attempt to convert to number
+        # Attempt to convert to numeric.
+        # Попытка конвертировать в число.
         col_num = pd.to_numeric(col_raw.str.replace(",", "."), errors="coerce")
         non_null = col_num.dropna()
 
-        # Consider column numeric if at least 1 numeric value exists.
-        # Important for re-order files where only 1 row out of 300 might be filled.
+        # Keep column if it has at least one numeric value.
+        # Оставляем колонку, если в ней есть хотя бы одно числовое значение.
         if len(non_null) < 1:
             continue
 
         right_cols_indices.append(idx)
 
-    # If no suitable numeric column found to the right – no point continuing
     if not right_cols_indices:
         st.error(f"Plik {name}: brak liczbowych kolumn z ilościami po kolumnie artykułu.")
         return None
 
-
-    # If no columns to the right – no point continuing
-    if not right_cols_indices:
-        st.error(f"Plik {name}: brak kolumn z ilościami po kolumnie artykułu.")
-        return None
-
-    # Preparation: take sub-table with right columns
+    # --- Heuristic Column Classification ---
+    # --- Эвристическая классификация колонок ---
+    # Try to identify Pallets, Qty, and Per (pieces per pallet) columns.
+    # Пытаемся идентифицировать колонки Паллеты, Кол-во и Per (штук на паллете).
+    
     right_part = df_data.iloc[:, right_cols_indices].copy()
-
-    # Try rough classification:
-    # - PALLETS: small integers (usually 1–32)
-    # - PER: typical values from known PER (10,20,11,1,22,320,27 etc.)
-    # - QTY: can be larger, many zeros and values > 32
 
     KNOWN_PER_VALUES = {10, 20, 11, 1, 22, 320, 27}
 
     pallets_col_idx = None
     per_col_idx = None
     qty_col_idx = None
-
-    # First gather statistics for each right column
+    
+    # Gather statistics for each column to aid classification.
+    # Собираем статистику для каждой колонки, чтобы помочь в классификации.
     col_stats = {}
     for idx in right_cols_indices:
         raw = df_data.iloc[:, idx].astype(str).str.replace(",", ".")
@@ -400,7 +410,7 @@ def parse_order_file_to_df(fobj):
         unique_vals = set(int(v) for v in non_null.unique() if pd.notna(v))
 
         per_hits = unique_vals.intersection(KNOWN_PER_VALUES)
-        zero_share = (col == 0).sum() / len(col)  # zero share
+        zero_share = (col == 0).sum() / len(col)
 
         col_stats[idx] = {
             "max": max_val,
@@ -410,9 +420,9 @@ def parse_order_file_to_df(fobj):
             "zero_share": zero_share,
         }
 
-    # 1) Try to select PER by max hits in KNOWN_PER_VALUES
+    # 1. Identify PER column (matches known values).
+    # 1. Идентифицируем колонку PER (совпадает с известными значениями).
     if col_stats:
-        # column with max per_hits_count
         per_candidate = max(
             col_stats.items(),
             key=lambda kv: kv[1]["per_hits_count"],
@@ -420,7 +430,8 @@ def parse_order_file_to_df(fobj):
         if per_candidate[1]["per_hits_count"] > 0:
             per_col_idx = per_candidate[0]
 
-    # 2) Try to select PALLETS among remaining: small values (<= 32)
+    # 2. Identify PALLETS column (small integers <= 32).
+    # 2. Идентифицируем колонку PALLETS (малые целые числа <= 32).
     for idx, stats in col_stats.items():
         if idx == per_col_idx:
             continue
@@ -428,7 +439,8 @@ def parse_order_file_to_df(fobj):
             pallets_col_idx = idx
             break
 
-    # 3) Everything else is QTY (total quantity)
+    # 3. Identify QTY column (remaining column).
+    # 3. Идентифицируем колонку QTY (оставшаяся колонка).
     for idx in right_cols_indices:
         if idx == per_col_idx or idx == pallets_col_idx:
             continue
@@ -436,9 +448,10 @@ def parse_order_file_to_df(fobj):
             qty_col_idx = idx
             break
 
-    # --- SANITY CHECK: Pallets vs Qty ---
-    # Physical sense check: pallet count cannot exceed quantity.
-    # If Pallets > Qty, columns are swapped (e.g., Qty is small and fell under <= 32 heuristic).
+    # --- Sanity Check: Pallets vs Qty ---
+    # --- Проверка здравого смысла: Паллеты vs Кол-во ---
+    # Pallets count should generally be smaller than Quantity.
+    # Количество паллет обычно должно быть меньше количества штук.
     if pallets_col_idx is not None and qty_col_idx is not None:
         p_vals = pd.to_numeric(
             df_data.iloc[:, pallets_col_idx].astype(str).str.replace(",", "."),
@@ -449,58 +462,50 @@ def parse_order_file_to_df(fobj):
             errors="coerce"
         ).fillna(0)
 
-        # Compare only where both values > 0
         mask_check = (p_vals > 0) & (q_vals > 0)
         if mask_check.any():
             violations = (p_vals[mask_check] > q_vals[mask_check]).sum()
             valid_count = mask_check.sum()
             
-            # If more than 50% valid rows violate condition -> swap
+            # Swap if heuristic failed.
+            # Меняем местами, если эвристика ошиблась.
             if violations > valid_count * 0.5:
                 pallets_col_idx, qty_col_idx = qty_col_idx, pallets_col_idx
 
 
-    # If PER not recognized by known values, but there are 2-3 columns,
-    # try taking the rightmost as PER if numbers aren't too big.
+    # Fallback for PER column if not identified.
+    # Резервный вариант для колонки PER, если не идентифицирована.
     if per_col_idx is None and len(right_cols_indices) >= 2:
         candidate = right_cols_indices[-1]
         col = pd.to_numeric(
             df_data.iloc[:, candidate].astype(str).str.replace(",", "."),
             errors="coerce",
         )
-        if col.dropna().max() <= 1000:  # rough limit for PER
+        if col.dropna().max() <= 1000:
             per_col_idx = candidate
 
-    # Now form raw columns ARTIKELNR_RAW, QTY_RAW, PALLETS_RAW, PER_RAW
+    # --- Construct Result DataFrame ---
+    # --- Создание итогового DataFrame ---
     data = pd.DataFrame()
     data["ARTIKELNR_RAW"] = artikel_col
 
-    # QTY_RAW
     if qty_col_idx is not None:
         data["QTY_RAW"] = df_data.iloc[:, qty_col_idx]
     else:
         data["QTY_RAW"] = ""
 
-    # PALLETS_RAW
     if pallets_col_idx is not None:
         data["PALLETS_RAW"] = df_data.iloc[:, pallets_col_idx]
     else:
         data["PALLETS_RAW"] = ""
 
-    # PER_RAW
     if per_col_idx is not None:
         data["PER_RAW"] = df_data.iloc[:, per_col_idx]
     else:
         data["PER_RAW"] = ""
 
-    # At this stage data structure is same as before:
-    #  ARTIKELNR_RAW, QTY_RAW, PALLETS_RAW, PER_RAW
-    # Remaining logic below (normalization, ORDER_QTY/ORDER_PALLETS calculation)
-    # remains unchanged.
-
-
-
-
+    # Normalize and clean data.
+    # Нормализация и очистка данных.
     res = pd.DataFrame()
     res["ARTIKELNR"] = data["ARTIKELNR_RAW"].astype(str).str.strip().str.upper()
 
@@ -514,8 +519,12 @@ def parse_order_file_to_df(fobj):
         errors="coerce",
     ).fillna(0).astype(int)
 
+    # Filter out rows with no pallets.
+    # Отфильтровываем строки без паллет.
     res = res[res["ORDER_PALLETS"] > 0].copy()
 
+    # Calculate QTY if missing but PER and PALLETS are present.
+    # Вычисляем QTY, если отсутствует, но есть PER и PALLETS.
     per_vals = pd.to_numeric(
         data["PER_RAW"].astype(str).str.replace(",", "."),
         errors="coerce",
@@ -533,20 +542,23 @@ def parse_order_file_to_df(fobj):
     return res
 
 # ---------- Aggregation of multiple order files ----------
+# ---------- Агрегация нескольких файлов заказов ----------
 
 def natural_sort_key(text):
+    # Helper for natural sorting (e.g., 1, 2, 10 instead of 1, 10, 2).
+    # Помощник для естественной сортировки (например, 1, 2, 10 вместо 1, 10, 2).
     import re
     parts = re.split(r"(\d+)", str(text).upper())
     return [int(p) if p.isdigit() else p for p in parts]
 
 def extract_date_from_filename(filename):
-    """
-    Attempts to extract date from filename.
-    Supports: dd-mm-yyyy, yyyy-mm-dd and dd-mm-yy (separators: - . _)
-    """
+    # Attempts to extract a date from the filename.
+    # Пытается извлечь дату из имени файла.
+    # Supports formats: dd-mm-yyyy, yyyy-mm-dd, dd-mm-yy.
+    # Поддерживает форматы: dd-mm-yyyy, yyyy-mm-dd, dd-mm-yy.
     s = str(filename)
     
-    # 1. Format dd-mm-yyyy (e.g. 01-05-2023)
+    # 1. Format dd-mm-yyyy
     match_dmy = re.search(r"(\d{2})[-._](\d{2})[-._](\d{4})", s)
     if match_dmy:
         d, m, y = match_dmy.groups()
@@ -555,7 +567,7 @@ def extract_date_from_filename(filename):
         except ValueError:
             pass
 
-    # 2. Format yyyy-mm-dd (e.g. 2023-05-01)
+    # 2. Format yyyy-mm-dd
     match_ymd = re.search(r"(\d{4})[-._](\d{2})[-._](\d{2})", s)
     if match_ymd:
         y, m, d = match_ymd.groups()
@@ -564,7 +576,7 @@ def extract_date_from_filename(filename):
         except ValueError:
             pass
 
-    # 3. Format dd-mm-yy (e.g. 01-05-23) -> assumes year 20xx
+    # 3. Format dd-mm-yy (assumes 20xx)
     match_dmy_short = re.search(r"(\d{2})[-._](\d{2})[-._](\d{2})", s)
     if match_dmy_short:
         d, m, y = match_dmy_short.groups()
@@ -577,20 +589,16 @@ def extract_date_from_filename(filename):
     return None
 
 def aggregate_uploaded_orders(uploaded_orders):
-    """
-    Accepts list of files from st.file_uploader,
-    returns:
-      - orders_all: all rows from files (ARTIKELNR, ORDER_PALLETS, ORDER_QTY, SOURCE_FILE)
-      - orders_agg: aggregate by ARTIKELNR with quantity summary
-      - valid_count: number of correctly processed files
-
-    Also builds detail map by article: quantity from each file,
-    used later for tooltips in aggregate table.
-    """
-    # detail map: ARTIKELNR -> { filename: qty_sum }
+    # Processes uploaded order files and aggregates them.
+    # Обрабатывает загруженные файлы заказов и агрегирует их.
+    # Returns: orders_all (detailed), orders_agg (aggregated), valid_count.
+    # Возвращает: orders_all (детальный), orders_agg (агрегированный), valid_count.
+    
     orders_detail_map = {}
 
     if not uploaded_orders:
+        # Reset cache if no files.
+        # Сброс кэша, если файлов нет.
         st.session_state["orders_cache"] = {
             "files_keys": None,
             "orders_all": None,
@@ -600,7 +608,8 @@ def aggregate_uploaded_orders(uploaded_orders):
         }
         return None, None, 0
 
-    # simple file set identifier: names + size
+    # Generate a key to check if files have changed.
+    # Генерируем ключ для проверки, изменились ли файлы.
     files_keys = tuple((getattr(f, "name", ""), getattr(f, "size", None)) for f in uploaded_orders)
 
     cache = st.session_state.get("orders_cache", {})
@@ -609,13 +618,14 @@ def aggregate_uploaded_orders(uploaded_orders):
         and cache.get("orders_agg") is not None
         and cache.get("orders_detail_map") is not None
         and "valid_count" in cache
-        # Check if cache contains ORDER_DATE column (for compatibility)
         and cache.get("orders_all") is not None and "ORDER_DATE" in cache["orders_all"].columns
     ):
-        # use already calculated data – no re-parsing
+        # Return cached data if files match.
+        # Возвращаем кэшированные данные, если файлы совпадают.
         return cache["orders_all"], cache["orders_agg"], cache["valid_count"]
 
-    # if files changed – recalculate
+    # Process files.
+    # Обработка файлов.
     orders_list = []
 
     for f in uploaded_orders:
@@ -628,12 +638,14 @@ def aggregate_uploaded_orders(uploaded_orders):
             st.warning(f"Plik {name}: nie znaleziono zamówień (pusty wynik).")
             continue
 
-        # add source info to rows
+        # Add metadata.
+        # Добавляем метаданные.
         parsed = parsed.copy()
         parsed["SOURCE_FILE"] = name
         parsed["ORDER_DATE"] = extract_date_from_filename(name)
 
-        # build detail map: sum of pieces from each file for given article
+        # Build detail map for tooltips.
+        # Строим карту деталей для подсказок.
         grouped = parsed.groupby("ARTIKELNR", as_index=False).agg(
             ORDER_PALLETS=("ORDER_PALLETS", "sum"),
             ORDER_QTY=("ORDER_QTY", "sum"),
@@ -657,25 +669,30 @@ def aggregate_uploaded_orders(uploaded_orders):
         }
         return None, None, 0
 
-    # all rows from files
+    # Combine all orders.
+    # Объединяем все заказы.
     orders_all = pd.concat(orders_list, ignore_index=True)
 
-    # aggregate by ARTIKELNR (only from files, no manual)
+    # Aggregate by article.
+    # Агрегируем по артикулу.
     orders_agg = orders_all.groupby("ARTIKELNR", as_index=False).agg(
         ORDER_PALLETS=("ORDER_PALLETS", "sum"),
         ORDER_QTY=("ORDER_QTY", "sum"),
     )
 
-    # only articles with pallets > 0
+    # Filter out zero pallets.
+    # Отфильтровываем нулевые паллеты.
     orders_agg = orders_agg[orders_agg["ORDER_PALLETS"] > 0].copy()
 
-    # natural sort by ARTIKELNR
+    # Sort.
+    # Сортировка.
     orders_agg["_sort_key"] = orders_agg["ARTIKELNR"].apply(natural_sort_key)
     orders_agg = orders_agg.sort_values("_sort_key").drop(columns=["_sort_key"]).reset_index(drop=True)
 
     valid_count = len(orders_list)
 
-    # save to cache
+    # Update cache.
+    # Обновляем кэш.
     st.session_state["orders_cache"] = {
         "files_keys": files_keys,
         "orders_all": orders_all,
@@ -687,6 +704,8 @@ def aggregate_uploaded_orders(uploaded_orders):
     return orders_all, orders_agg, valid_count
 
 def make_order_tooltip(art, orders_detail_map, manual_agg, STR):
+    # Generates a tooltip string showing the source of orders for an article.
+    # Генерирует строку подсказки, показывающую источник заказов для артикула.
     lines = []
     a = str(art).strip().upper()
 
@@ -710,12 +729,11 @@ def make_order_tooltip(art, orders_detail_map, manual_agg, STR):
 
 
 # ---------- Manual Orders – quick add without table ----------
+# ---------- Ручные заказы – быстрое добавление без таблицы ----------
 
 def init_manual_orders():
-    """
-    Editor buffer (manual_orders_editor_df) always has at least one empty row.
-    Committed – already added to order aggregate.
-    """
+    # Initializes session state for manual orders.
+    # Инициализирует состояние сессии для ручных заказов.
     if "manual_orders_editor_df" not in st.session_state:
         st.session_state.manual_orders_editor_df = pd.DataFrame(
             {"ARTIKELNR": [""], "ORDER_PALLETS": [0], "ORDER_QTY": [0]}
@@ -726,12 +744,8 @@ def init_manual_orders():
         )
 
 def render_manual_orders_editor(artikel_options, STR):
-    """
-    Simple form for manual orders:
-      - enter one item at a time,
-      - buffer is invisible – added directly to aggregate,
-      - list of already added manual orders at the bottom.
-    """
+    # Renders the interface for adding manual orders.
+    # Рендерит интерфейс для добавления ручных заказов.
     init_manual_orders()
 
     if "manual_order_msg" in st.session_state:
@@ -739,7 +753,8 @@ def render_manual_orders_editor(artikel_options, STR):
 
     st.subheader(STR["manual_orders"])
 
-    # 1) Single item form
+    # --- Single Item Entry Form ---
+    # --- Форма ввода одного элемента ---
     st.markdown(f"#### {STR['add_manual_item_header']}")
 
     col_a, col_p, col_q, col_btn = st.columns([3, 1, 1, 1])
@@ -772,22 +787,21 @@ def render_manual_orders_editor(artikel_options, STR):
     with col_btn:
         st.write("")
         if st.button(STR["manual_add_row_btn"], key="manual_add_row_btn"):
-            # 1) Article check
+            # Validate input.
+            # Валидация ввода.
             if not new_art or not new_art.strip():
                 st.warning(STR["manual_select_article_warning"])
             else:
                 art_norm = new_art.strip().upper()
 
-                # Allow manual entry of article outside filters:
-                # if not in artikel_options, just warn.
                 if art_norm not in [a.strip().upper() for a in artikel_options]:
                     st.warning(STR["manual_article_not_in_filter_warning"])
 
-                # 2) Quantity check
                 if int(new_pallets) == 0 and int(new_qty) == 0:
                     st.warning(STR["manual_quantity_warning"])
                 else:
-                    # 3) Add directly to manual_orders_committed_df
+                    # Add to committed DataFrame.
+                    # Добавляем в подтвержденный DataFrame.
                     new_row = pd.DataFrame(
                         {
                             "ARTIKELNR": [art_norm],
@@ -806,13 +820,16 @@ def render_manual_orders_editor(artikel_options, STR):
 
     st.markdown("---")
 
-    # 2) Button to clear all manual orders (if needed)
+    # --- Clear All Button ---
+    # --- Кнопка очистить все ---
     if st.button(STR["manual_clear_all"], type="secondary", key="clear_manual_committed"):
         st.session_state.manual_orders_committed_df = pd.DataFrame(
             {"ARTIKELNR": [], "ORDER_PALLETS": [], "ORDER_QTY": []}
         )
         st.success(STR["manual_cleared_success"])
 
+    # --- Display Committed Orders ---
+    # --- Отображение подтвержденных заказов ---
     st.markdown(f"#### {STR['manual_added_header']}")
 
     committed = st.session_state.manual_orders_committed_df
@@ -827,7 +844,8 @@ def render_manual_orders_editor(artikel_options, STR):
             committed_display["ORDER_QTY"], errors="coerce"
         ).fillna(0)
 
-        # add column with selection for deletion
+        # Add checkbox column for deletion.
+        # Добавляем колонку с чекбоксом для удаления.
         committed_display["USUN"] = False
 
         edited = st.data_editor(
@@ -846,14 +864,14 @@ def render_manual_orders_editor(artikel_options, STR):
         col_del_one, col_space = st.columns([1, 3])
         with col_del_one:
             def delete_selected_callback():
-                # Get changes directly from editor state
+                # Callback to delete selected rows.
+                # Обратный вызов для удаления выбранных строк.
                 editor_state = st.session_state.get("manual_committed_editor", {})
                 edited_rows = editor_state.get("edited_rows", {})
                 indices_to_remove = [int(k) for k, v in edited_rows.items() if v.get("USUN") is True]
                 
                 if indices_to_remove:
                     df = st.session_state.manual_orders_committed_df
-                    # Filter indices to avoid errors
                     valid_indices = [i for i in indices_to_remove if i in df.index]
                     if valid_indices:
                         st.session_state.manual_orders_committed_df = df.drop(valid_indices).reset_index(drop=True)
@@ -866,15 +884,19 @@ def render_manual_orders_editor(artikel_options, STR):
 
 
 # ---------- Main function for 'Orders' tab ----------
+# ---------- Главная функция для вкладки 'Заказы' ----------
 
 def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artikel=None, filtered_pallets_no_art_df=None, full_df=None, date_start=None, date_end=None, selected_mandant=None, STR=None):
-    """
-    Main function for pallet + order analysis.
-    """
-    from utils import load_excluded_articles  # ← ONLY 4 spaces!
+    # Main function to render the Orders tab.
+    # Главная функция для рендеринга вкладки Заказы.
+    # Displays pallet list, order uploads, and comparison.
+    # Отображает список паллет, загрузку заказов и сравнение.
+    
+    from utils import load_excluded_articles
 
     
-    # 1) FIRST BLOCK: Pallet table + sum by article
+    # --- 1. Pallet List Section ---
+    # --- 1. Секция списка паллет ---
     st.subheader(STR["pallet_list_title"])
     
     if filtered_pallets_df is not None and not filtered_pallets_df.empty:
@@ -893,13 +915,15 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
 
         df_show = filtered_pallets_df[cols_show].sort_values(by="OUT_DATE", ascending=False).reset_index(drop=True)
         
-        # Date formatting to YYYY-MM-DD (without time)
+        # Format dates.
+        # Форматирование дат.
         df_show["IN_DATE"] = df_show["IN_DATE"].dt.date
         df_show["OUT_DATE"] = df_show["OUT_DATE"].dt.date
 
         st.dataframe(df_show, width="stretch", hide_index=True)
         
-        # Aggregation of visible pallets (summary)
+        # Summary of visible pallets.
+        # Сводка видимых паллет.
         st.markdown(f"#### {STR['pallet_list_summary']}")
         df_list_agg = filtered_pallets_df.groupby(["ARTIKELNR", "ARTBEZ1"], as_index=False).agg(
             Liczba_palet=("LHMNR", "nunique"),
@@ -907,19 +931,21 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
         ).rename(columns={"Liczba_palet": "Liczba palet", "Suma_sztuk": "Suma sztuk"}).sort_values("Liczba palet", ascending=False)
         st.dataframe(df_list_agg, width="stretch", hide_index=True)
 
-        # Extended daily analytics (in expanders)
+        # Detailed daily analytics.
+        # Подробная ежедневная аналитика.
         with st.expander(STR["daily_details_expander"], expanded=False):
             if not selected_artikel:
                 st.info(STR["daily_details_info"])
             elif full_df is not None and selected_mandant and date_start and date_end:
-                # --- Prepare data regardless of mode (Input/Output) ---
+                # Prepare data for daily breakdown.
+                # Подготовка данных для ежедневной разбивки.
                 
-                # 1. Mandant and Article Filter
                 mask_base = (full_df["MANDANT"].astype(str) == str(selected_mandant))
                 mask_base &= full_df["ARTIKELNR"].isin([a.strip().upper() for a in selected_artikel])
                 df_subset = full_df[mask_base]
 
-                # 2. Receipts (IN_DATE in date range)
+                # Receipts.
+                # Поступления.
                 mask_in = df_subset["IN_DATE"].between(pd.Timestamp(date_start), pd.Timestamp(date_end))
                 df_in = df_subset[mask_in].copy()
 
@@ -938,7 +964,8 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
 
                 st.markdown("---")
 
-                # 3. Removals (OUT_DATE in date range + IS_DELETED)
+                # Removals.
+                # Удаления.
                 mask_out = df_subset["OUT_DATE"].between(pd.Timestamp(date_start), pd.Timestamp(date_end))
                 if "IS_DELETED" in df_subset.columns:
                     mask_deleted = df_subset["IS_DELETED"]
@@ -969,13 +996,15 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
 
     st.markdown("---")
 
-    # 2) SECOND BLOCK: Orders (files + manual)
+    # --- 2. Orders Section ---
+    # --- 2. Секция заказов ---
     st.subheader(STR["orders_header"])
 
     if "orders_uploader_key" not in st.session_state:
         st.session_state["orders_uploader_key"] = 0
 
-    # Upload order files
+    # File uploader.
+    # Загрузчик файлов.
     uploaded_orders = st.file_uploader(
         STR["upload_orders"],
         type=["xlsx", "csv", "txt"],
@@ -995,15 +1024,19 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
             st.session_state["orders_uploader_key"] += 1
             st.rerun()
 
+    # Process uploaded files.
+    # Обработка загруженных файлов.
     orders_all, orders_agg_base, valid_files_count = aggregate_uploaded_orders(uploaded_orders)
 
     if uploaded_orders:
         st.caption(STR["loaded_files_info"].format(count=len(uploaded_orders), valid=valid_files_count))
 
-    # Manual orders
+    # Render manual orders editor.
+    # Рендеринг редактора ручных заказов.
     render_manual_orders_editor(artikel_options, STR)
 
-    # Check for order data
+    # Check if any order data exists.
+    # Проверка наличия данных заказов.
     manual_df = st.session_state.get("manual_orders_committed_df", pd.DataFrame(
         {"ARTIKELNR": [], "ORDER_PALLETS": [], "ORDER_QTY": []}
     ))
@@ -1012,7 +1045,8 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
         st.info(STR["no_orders_data"])
         return
 
-    # Aggregate files + manual
+    # Combine file orders and manual orders.
+    # Объединение заказов из файлов и ручных заказов.
     manual_agg = None
     if not manual_df.empty:
         m = manual_df.copy()
@@ -1025,7 +1059,6 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
             Manual_Qty=("ORDER_QTY", "sum"),
         )
 
-    # Final aggregate
     if orders_agg_base is not None:
         orders_agg = orders_agg_base.copy()
     else:
@@ -1037,7 +1070,8 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
         orders_agg["Manual_Pallets"] = 0
         orders_agg["Manual_Qty"] = 0
 
-    # Normalization
+    # Normalize numeric columns.
+    # Нормализация числовых колонок.
     for col in ["ORDER_PALLETS", "Manual_Pallets"]:
         orders_agg[col] = pd.to_numeric(orders_agg[col], errors="coerce").fillna(0).astype(int)
     for col in ["ORDER_QTY", "Manual_Qty"]:
@@ -1046,7 +1080,8 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
     orders_agg["Ordered_Pallets_Total"] = orders_agg["ORDER_PALLETS"] + orders_agg["Manual_Pallets"]
     orders_agg["Ordered_Qty_Total"] = orders_agg["ORDER_QTY"] + orders_agg["Manual_Qty"]
 
-    # Sources
+    # Calculate sources count.
+    # Подсчет количества источников.
     cache = st.session_state.get("orders_cache", {})
     orders_detail_map = cache.get("orders_detail_map", {})
 
@@ -1070,7 +1105,8 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
         lambda a: make_order_tooltip(a, orders_detail_map, manual_agg, STR)
     )
 
-    # Order table
+    # Display aggregated orders table.
+    # Отображение таблицы агрегированных заказов.
     st.subheader(f"📋 {STR['orders_table']}")
     display_cols = ["ARTIKELNR", "Ordered_Pallets_Total", "Ordered_Qty_Total", "SOURCES_CNT", "ORDER_TOOLTIP"]
     display_df = orders_agg[display_cols].copy()
@@ -1088,8 +1124,8 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
         hide_index=True,
     )
 
-    # 3) COMPARISON (if pallets exist)
-    # Use data without article filter (if available) so comparative metrics are global
+    # --- 3. Comparison Section ---
+    # --- 3. Секция сравнения ---
     df_for_comparison = filtered_pallets_no_art_df if filtered_pallets_no_art_df is not None else filtered_pallets_df
 
     if df_for_comparison is not None and not df_for_comparison.empty:
@@ -1099,11 +1135,15 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
         deleted_pallets = df_for_comparison[df_for_comparison["IS_DELETED"]].copy()
 
         if not deleted_pallets.empty:
+            # Aggregate deleted pallets.
+            # Агрегация удаленных паллет.
             deleted_agg = deleted_pallets.groupby("ARTIKELNR", as_index=False).agg(
                 Deleted_Pallets=("LHMNR", "nunique"),
                 Deleted_Qty=("QUANTITY", "sum"),
             )
 
+            # Merge orders and deletions.
+            # Объединение заказов и удалений.
             comparison_df = orders_agg[["ARTIKELNR", "Ordered_Pallets_Total", "Ordered_Qty_Total"]].merge(
                 deleted_agg, on="ARTIKELNR", how="outer"
             ).fillna(0)
@@ -1115,23 +1155,26 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
                 comparison_df["Ordered_Qty_Total"] - comparison_df["Deleted_Qty"]
             )
 
-            # Filter rows without difference
-            # Load exceptions
+            # Filter rows based on differences and exclusions.
+            # Фильтрация строк на основе различий и исключений.
             excluded_exact, excluded_prefixes = load_excluded_articles()
             
             def should_show_row(row):
                 art = row["ARTIKELNR"].strip().upper()
                 if is_excluded_article(art, excluded_exact, excluded_prefixes):
-                    # Exceptions: show ONLY if BOTH differences are NOT zero
+                    # For excluded articles, show only if BOTH differences are non-zero.
+                    # Для исключенных артикулов показывать только если ОБА различия не равны нулю.
                     return (row["Różnica_Palety"] != 0) and (row["Różnica_Sztuki"] != 0)
                 else:
-                    # Regular: show if AT LEAST ONE difference
+                    # For regular articles, show if ANY difference exists.
+                    # Для обычных артикулов показывать, если есть ХОТЯ БЫ ОДНО различие.
                     return (row["Różnica_Palety"] != 0) or (row["Różnica_Sztuki"] != 0)
             
             comparison_df = comparison_df[comparison_df.apply(should_show_row, axis=1)]
 
 
-            # Add explanation column
+            # Generate explanation text.
+            # Генерация текста пояснения.
             def explain_diff(row):
                 diff_pal = row["Różnica_Palety"]
                 diff_szt = row["Różnica_Sztuki"]
@@ -1160,15 +1203,15 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
 
             comparison_df = comparison_df.sort_values("Różnica_Palety", ascending=False).reset_index(drop=True)
 
-            # --- Daily Breakdown ---
-            # Show column only if date range selected (> 1 day)
+            # --- Daily Breakdown Analysis ---
+            # --- Анализ ежедневной разбивки ---
             is_date_range = date_start and date_end and (date_end.date() - date_start.date()).days > 0
 
             if is_date_range and orders_all is not None and "ORDER_DATE" in orders_all.columns and not orders_all.empty:
-                # 1. Orders by date
                 orders_valid = orders_all.dropna(subset=["ORDER_DATE"]).copy()
                 
-                # Warning about files without date
+                # Warn about files without dates.
+                # Предупреждение о файлах без дат.
                 missing_date_mask = orders_all["ORDER_DATE"].isna()
                 if missing_date_mask.any():
                     missing_files = orders_all.loc[missing_date_mask, "SOURCE_FILE"].unique()
@@ -1183,7 +1226,6 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
                 else:
                     orders_daily = pd.DataFrame(columns=["ARTIKELNR", "DATE", "ORD"])
                 
-                # 2. Removals by date (from deleted_pallets)
                 if not deleted_pallets.empty:
                     del_daily = deleted_pallets.copy()
                     del_daily["DATE"] = del_daily["OUT_DATE"].dt.date
@@ -1192,12 +1234,12 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
                 else:
                     del_daily_agg = pd.DataFrame(columns=["ARTIKELNR", "DATE", "DEL"])
 
-                # 3. Merge and calculate differences
+                # Merge daily data and calculate differences.
+                # Объединение ежедневных данных и расчет различий.
                 if not orders_daily.empty or not del_daily_agg.empty:
                     daily_merged = pd.merge(orders_daily, del_daily_agg, on=["ARTIKELNR", "DATE"], how="outer").fillna(0)
                     daily_merged["DIFF"] = daily_merged["ORD"] - daily_merged["DEL"]
                     
-                    # Filter only differences
                     daily_diffs = daily_merged[daily_merged["DIFF"] != 0].copy()
                     
                     if not daily_diffs.empty:
@@ -1221,7 +1263,8 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
             elif is_date_range:
                 comparison_df["Dni z różnicą"] = "-"
 
-            # Rename columns for display
+            # Rename columns for display.
+            # Переименование колонок для отображения.
             display_comparison_df = comparison_df.copy()
             display_comparison_df.rename(columns={
                 "Różnica_Palety": STR["col_diff_pallets"],
@@ -1236,7 +1279,8 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
                 hide_index=True,
             )
 
-            # Final comparison statistics
+            # Display final metrics.
+            # Отображение итоговых метрик.
             col1, col2, col3 = st.columns(3)
             col1.metric(STR["metric_articles_ordered"], f"{len(orders_agg[orders_agg['Ordered_Pallets_Total'] > 0])}")
             col2.metric(STR["metric_articles_removed"], f"{len(deleted_agg)}")
