@@ -86,7 +86,9 @@ def aggregate_stock_df(df_stock, STR):
         
     # Group by Article, Description, and Packaging.
     # Группировка по Артикулу, Описанию и Упаковке.
-    df_agg = df_stock.groupby(["ARTIKELNR", "ARTBEZ1", "Opakowanie"], dropna=False).agg(
+    # observed=True is crucial for performance with categorical data.
+    # observed=True критически важен для производительности с категориальными данными.
+    df_agg = df_stock.groupby(["ARTIKELNR", "ARTBEZ1", "Opakowanie"], dropna=False, observed=True).agg(
         Ilość_palet=("LHMNR", "count"),
         Ilość_sztuk=("QUANTITY", "sum")
     ).reset_index()

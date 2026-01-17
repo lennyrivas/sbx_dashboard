@@ -110,16 +110,19 @@ def render_stats_tab(df, STR):
 
         # Render the chart using the shared function from stock.py.
         # Рендерим график, используя общую функцию из stock.py.
-        render_stock_history(
-            df=df,
-            selected_mandant_stock=selected_mandant_stock,
-            selected_artikel_stock=selected_artikel_stock,
-            history_start=history_start,
-            history_end=history_end,
-            show_cartons_only=show_cartons_only,
-            STR=STR,
-            widget_prefix="stats_",
-        )
+        # Spinner provides visual feedback during heavy calculation.
+        # Спиннер обеспечивает визуальную обратную связь во время тяжелых вычислений.
+        with st.spinner("Generowanie wykresu historii..."):
+            render_stock_history(
+                df=df,
+                selected_mandant_stock=selected_mandant_stock,
+                selected_artikel_stock=selected_artikel_stock,
+                history_start=history_start,
+                history_end=history_end,
+                show_cartons_only=show_cartons_only,
+                STR=STR,
+                widget_prefix="stats_",
+            )
 
     # --- Section 2: Monthly Report & Rankings ---
     # --- Секция 2: Ежемесячный отчет и рейтинги ---

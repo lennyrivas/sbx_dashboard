@@ -10,3 +10,4 @@ google-auth==2.26.1
 google-auth-oauthlib==1.2.0
 selenium==4.16.0
 webdriver-manager==4.0.1
+pyarrow>=14.0.0

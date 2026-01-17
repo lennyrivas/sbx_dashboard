@@ -243,9 +243,12 @@ def show_main_display(filtered_df, deleted_df, STR):
         if len(deleted_df) > 0:
             # Group by article to calculate totals.
             # Группируем по артикулу для подсчета итогов.
+            # observed=True prevents creating rows for unobserved categories (optimization).
+            # observed=True предотвращает создание строк для ненаблюдаемых категорий (оптимизация).
             summary = deleted_df.groupby(
                 ["ARTIKELNR", "ARTBEZ1"],
-                as_index=False
+                as_index=False,
+                observed=True
             ).agg(
                 Deleted_Pallets=("LHMNR", lambda s: s.nunique()),
                 Deleted_Qty=("QUANTITY", "sum")

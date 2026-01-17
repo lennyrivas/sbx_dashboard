@@ -757,65 +757,70 @@ def render_manual_orders_editor(artikel_options, STR):
     # --- Форма ввода одного элемента ---
     st.markdown(f"#### {STR['add_manual_item_header']}")
 
-    col_a, col_p, col_q, col_btn = st.columns([3, 1, 1, 1])
+    # Use a form to batch input and prevent app rerun on every keystroke/selection change.
+    # Используем форму для пакетного ввода и предотвращения перезапуска приложения при каждом нажатии клавиши/изменении выбора.
+    with st.form("manual_add_form", clear_on_submit=False):
+        col_a, col_p, col_q, col_btn = st.columns([3, 1, 1, 1])
 
-    with col_a:
-        options = [""] + artikel_options
-        new_art = st.selectbox(
-            STR["manual_input_artikelnr"],
-            options=options,
-            index=0,
-            key="manual_artikel_select",
-        )
+        with col_a:
+            options = [""] + artikel_options
+            new_art = st.selectbox(
+                STR["manual_input_artikelnr"],
+                options=options,
+                index=0,
+                key="manual_artikel_select",
+            )
 
-    with col_p:
-        new_pallets = st.number_input(
-            STR["manual_input_pallets"],
-            min_value=0,
-            value=0,
-            key="manual_pallets_input",
-        )
+        with col_p:
+            new_pallets = st.number_input(
+                STR["manual_input_pallets"],
+                min_value=0,
+                value=0,
+                key="manual_pallets_input",
+            )
 
-    with col_q:
-        new_qty = st.number_input(
-            STR["manual_input_qty"],
-            min_value=0,
-            value=0,
-            key="manual_qty_input",
-        )
+        with col_q:
+            new_qty = st.number_input(
+                STR["manual_input_qty"],
+                min_value=0,
+                value=0,
+                key="manual_qty_input",
+            )
 
-    with col_btn:
-        st.write("")
-        if st.button(STR["manual_add_row_btn"], key="manual_add_row_btn"):
-            # Validate input.
-            # Валидация ввода.
-            if not new_art or not new_art.strip():
-                st.warning(STR["manual_select_article_warning"])
+        with col_btn:
+            st.write("")
+            submitted = st.form_submit_button(STR["manual_add_row_btn"])
+
+    if submitted:
+        # Validate input.
+        # Валидация ввода.
+        if not new_art or not new_art.strip():
+            st.warning(STR["manual_select_article_warning"])
+        else:
+            art_norm = new_art.strip().upper()
+
+            if art_norm not in [a.strip().upper() for a in artikel_options]:
+                st.warning(STR["manual_article_not_in_filter_warning"])
+
+            if int(new_pallets) == 0 and int(new_qty) == 0:
+                st.warning(STR["manual_quantity_warning"])
             else:
-                art_norm = new_art.strip().upper()
+                # Add to committed DataFrame.
+                # Добавляем в подтвержденный DataFrame.
+                new_row = pd.DataFrame(
+                    {
+                        "ARTIKELNR": [art_norm],
+                        "ORDER_PALLETS": [int(new_pallets)],
+                        "ORDER_QTY": [int(new_qty)],
+                    }
+                )
 
-                if art_norm not in [a.strip().upper() for a in artikel_options]:
-                    st.warning(STR["manual_article_not_in_filter_warning"])
+                st.session_state.manual_orders_committed_df = pd.concat(
+                    [st.session_state.manual_orders_committed_df, new_row],
+                    ignore_index=True,
+                )
 
-                if int(new_pallets) == 0 and int(new_qty) == 0:
-                    st.warning(STR["manual_quantity_warning"])
-                else:
-                    # Add to committed DataFrame.
-                    # Добавляем в подтвержденный DataFrame.
-                    new_row = pd.DataFrame(
-                        {
-                            "ARTIKELNR": [art_norm],
-                            "ORDER_PALLETS": [int(new_pallets)],
-                            "ORDER_QTY": [int(new_qty)],
-                        }
-                    )
-
-                    st.session_state.manual_orders_committed_df = pd.concat(
-                        [st.session_state.manual_orders_committed_df, new_row],
-                        ignore_index=True,
-                    )
-
-                    st.success(STR["manual_added_success"].format(art=art_norm))
+                st.success(STR["manual_added_success"].format(art=art_norm))
 
 
     st.markdown("---")
@@ -925,7 +930,9 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
         # Summary of visible pallets.
         # Сводка видимых паллет.
         st.markdown(f"#### {STR['pallet_list_summary']}")
-        df_list_agg = filtered_pallets_df.groupby(["ARTIKELNR", "ARTBEZ1"], as_index=False).agg(
+        # observed=True is required when grouping by categorical columns to avoid expanding all categories.
+        # observed=True требуется при группировке по категориальным колонкам, чтобы избежать развертывания всех категорий.
+        df_list_agg = filtered_pallets_df.groupby(["ARTIKELNR", "ARTBEZ1"], as_index=False, observed=True).agg(
             Liczba_palet=("LHMNR", "nunique"),
             Suma_sztuk=("QUANTITY", "sum")
         ).rename(columns={"Liczba_palet": "Liczba palet", "Suma_sztuk": "Suma sztuk"}).sort_values("Liczba palet", ascending=False)
@@ -950,7 +957,9 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
                 df_in = df_subset[mask_in].copy()
 
                 if not df_in.empty:
-                    daily_accepted = df_in.groupby(["ARTIKELNR", "IN_DATE"], as_index=False).agg(
+                    # Group by article and date. observed=True handles categorical ARTIKELNR correctly.
+                    # Группируем по артикулу и дате. observed=True корректно обрабатывает категориальный ARTIKELNR.
+                    daily_accepted = df_in.groupby(["ARTIKELNR", "IN_DATE"], as_index=False, observed=True).agg(
                         Palety_przyjęte=("LHMNR", "nunique"),
                         Sztuki_przyjęte=("QUANTITY", "sum")
                     )
@@ -975,7 +984,9 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
                 df_out = df_subset[mask_out & mask_deleted].copy()
 
                 if not df_out.empty:
-                    daily_deleted = df_out.groupby(["ARTIKELNR", "OUT_DATE"], as_index=False).agg(
+                    # Group by article and date. observed=True handles categorical ARTIKELNR correctly.
+                    # Группируем по артикулу и дате. observed=True корректно обрабатывает категориальный ARTIKELNR.
+                    daily_deleted = df_out.groupby(["ARTIKELNR", "OUT_DATE"], as_index=False, observed=True).agg(
                         Palety_usunięte=("LHMNR", "nunique"),
                         Sztuki_usunięte=("QUANTITY", "sum")
                     )
@@ -1137,7 +1148,9 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
         if not deleted_pallets.empty:
             # Aggregate deleted pallets.
             # Агрегация удаленных паллет.
-            deleted_agg = deleted_pallets.groupby("ARTIKELNR", as_index=False).agg(
+            # observed=True ensures we only count existing categories.
+            # observed=True гарантирует, что мы считаем только существующие категории.
+            deleted_agg = deleted_pallets.groupby("ARTIKELNR", as_index=False, observed=True).agg(
                 Deleted_Pallets=("LHMNR", "nunique"),
                 Deleted_Qty=("QUANTITY", "sum"),
             )
@@ -1229,7 +1242,9 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
                 if not deleted_pallets.empty:
                     del_daily = deleted_pallets.copy()
                     del_daily["DATE"] = del_daily["OUT_DATE"].dt.date
-                    del_daily_agg = del_daily.groupby(["ARTIKELNR", "DATE"], as_index=False)["LHMNR"].nunique()
+                    # Group by article and date. observed=True handles categorical ARTIKELNR correctly.
+                    # Группируем по артикулу и дате. observed=True корректно обрабатывает категориальный ARTIKELNR.
+                    del_daily_agg = del_daily.groupby(["ARTIKELNR", "DATE"], as_index=False, observed=True)["LHMNR"].nunique()
                     del_daily_agg.rename(columns={"LHMNR": "DEL"}, inplace=True)
                 else:
                     del_daily_agg = pd.DataFrame(columns=["ARTIKELNR", "DATE", "DEL"])

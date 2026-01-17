@@ -98,10 +98,7 @@ def load_main_csv(uploaded_file, STR):
     try:
         # Try reading the file with UTF-8 encoding first.
         # Сначала пытаемся прочитать файл в кодировке UTF-8.
-        if uploaded_file.name.lower().endswith(('.csv', '.txt')):
-            df_raw = pd.read_csv(uploaded_file, sep=';', dtype=str, encoding='utf-8')
-        else:
-            df_raw = pd.read_csv(uploaded_file, sep=';', dtype=str, encoding='utf-8')
+        df_raw = pd.read_csv(uploaded_file, sep=';', dtype=str, encoding='utf-8')
     except Exception:
         try:
             # Fallback to Latin-1 if UTF-8 fails.
@@ -167,7 +164,7 @@ def load_main_csv(uploaded_file, STR):
     
     # ARTIKELNR: String, stripped, upper case.
     # ARTIKELNR: Строка, без пробелов, верхний регистр.
-    df["ARTIKELNR"] = df["ARTIKELNR"].astype(str).str.strip().str.upper()
+    df["ARTIKELNR"] = df["ARTIKELNR"].astype(str).str.strip().str.upper().astype("category")
     
     # ARTBEZ1: String, stripped.
     # ARTBEZ1: Строка, без пробелов.
@@ -190,7 +187,7 @@ def load_main_csv(uploaded_file, STR):
     
     # ZUSTAND: String, stripped.
     # ZUSTAND: Строка, без пробелов.
-    df["ZUSTAND"] = df["ZUSTAND"].astype(str).str.strip()
+    df["ZUSTAND"] = df["ZUSTAND"].astype(str).str.strip().astype("category")
     
     # PLATZ: String, stripped.
     # PLATZ: Строка, без пробелов.
@@ -198,7 +195,11 @@ def load_main_csv(uploaded_file, STR):
     
     # CREATED_BY: String, stripped.
     # CREATED_BY: Строка, без пробелов.
-    df["CREATED_BY"] = df["CREATED_BY"].astype(str).str.strip()
+    df["CREATED_BY"] = df["CREATED_BY"].astype(str).str.strip().astype("category")
+    
+    # MANDANT: Convert to category for memory saving.
+    # MANDANT: Конвертируем в категорию для экономии памяти.
+    df["MANDANT"] = df["MANDANT"].astype("category")
 
     # Convert date columns to datetime objects.
     # Конвертируем колонки дат в объекты datetime.
