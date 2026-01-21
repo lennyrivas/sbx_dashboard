@@ -56,22 +56,25 @@ def render_removal_tab(df, STR):
     st.info(STR["removal_info"])
 
     # 1. Check order availability.
-    # 1. Проверка наличия заказов.
-    if "orders_cache" not in st.session_state or st.session_state["orders_cache"].get("orders_all") is None:
-        st.warning(STR["removal_warn_no_orders"])
-        return
-
-    orders_all = st.session_state["orders_cache"]["orders_all"]
-    if orders_all.empty:
-        st.warning(STR["removal_warn_empty_orders"])
-        return
+    # 1. Проверка наличия заказов (теперь опционально).
+    orders_all = pd.DataFrame()
+    if "orders_cache" in st.session_state and st.session_state["orders_cache"].get("orders_all") is not None:
+        orders_all = st.session_state["orders_cache"]["orders_all"]
 
     # 2. File selection dropdown.
     # 2. Выпадающий список выбора файла.
-    files = sorted(orders_all["SOURCE_FILE"].unique())
-    selected_file = st.selectbox(STR["removal_select_file"], options=files)
+    files = []
+    if not orders_all.empty:
+        files = sorted(orders_all["SOURCE_FILE"].unique())
+    
+    manual_opt = STR.get("removal_manual_option", "Ręczny wybór (bez zamówienia)")
+    options = [manual_opt] + files
+    
+    selected_file = st.selectbox(STR["removal_select_file"], options=options)
 
-    if selected_file:
+    if selected_file == manual_opt:
+        render_manual_mode(st.session_state["removal_stock_df"], STR)
+    elif selected_file:
         # Pass our optimized stock base from session state to the tool.
         # Передаем нашу оптимизированную базу остатков из состояния сессии в инструмент.
         render_removal_tool(st.session_state["removal_stock_df"], orders_all, selected_file, STR)
@@ -434,3 +437,93 @@ def render_removal_tool(stock_df, orders_all, filename, STR):
             st.toast(STR["removal_toast_generated"], icon="📋")
     else:
         st.info(STR["removal_no_selection"])
+
+def render_manual_mode(stock_df, STR):
+    # Renders the manual selection mode for pallet removal.
+    # Рендерит режим ручного выбора для удаления паллет.
+    
+    st.markdown(f"### {STR.get('removal_manual_header', 'Ręczny wybór artykułów')}")
+
+    if "manual_removal_items" not in st.session_state:
+        st.session_state["manual_removal_items"] = []
+
+    # Form to add items
+    with st.form("manual_removal_form_add", clear_on_submit=True):
+        c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
+        with c1:
+            avail_arts = sorted(stock_df["ARTIKELNR"].unique())
+            art = st.selectbox(STR["artikel"], options=avail_arts, key="man_art")
+        with c2:
+            qty = st.number_input(STR["manual_input_qty"], min_value=0, step=1, key="man_qty")
+        with c3:
+            pal = st.number_input(STR["manual_input_pallets"], min_value=0, step=1, key="man_pal")
+        with c4:
+            st.write("")
+            add = st.form_submit_button(STR["manual_add_row_btn"])
+    
+    if add:
+        if qty == 0 and pal == 0:
+            st.warning(STR["manual_quantity_warning"])
+        else:
+            st.session_state["manual_removal_items"].append({
+                "ARTIKELNR": art,
+                "ORDER_QTY": qty,
+                "ORDER_PALLETS": pal,
+                "SOURCE_FILE": "MANUAL"
+            })
+
+    # Display current list and render tool
+    if st.session_state["manual_removal_items"]:
+        st.markdown("---")
+        manual_df = pd.DataFrame(st.session_state["manual_removal_items"])
+        
+        if st.button(STR.get("removal_clear_btn", "Wyczyść listę"), key="man_clear"):
+            st.session_state["manual_removal_items"] = []
+            st.rerun()
+            
+        render_removal_tool(stock_df, manual_df, "MANUAL", STR)
+
+def render_manual_mode(stock_df, STR):
+    # Renders the manual selection mode for pallet removal.
+    # Рендерит режим ручного выбора для удаления паллет.
+    
+    st.markdown(f"### {STR.get('removal_manual_header', 'Ręczny wybór artykułów')}")
+
+    if "manual_removal_items" not in st.session_state:
+        st.session_state["manual_removal_items"] = []
+
+    # Form to add items
+    with st.form("manual_removal_form_add", clear_on_submit=True):
+        c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
+        with c1:
+            avail_arts = sorted(stock_df["ARTIKELNR"].unique())
+            art = st.selectbox(STR["artikel"], options=avail_arts, key="man_art")
+        with c2:
+            qty = st.number_input(STR["manual_input_qty"], min_value=0, step=1, key="man_qty")
+        with c3:
+            pal = st.number_input(STR["manual_input_pallets"], min_value=0, step=1, key="man_pal")
+        with c4:
+            st.write("")
+            add = st.form_submit_button(STR["manual_add_row_btn"])
+    
+    if add:
+        if qty == 0 and pal == 0:
+            st.warning(STR["manual_quantity_warning"])
+        else:
+            st.session_state["manual_removal_items"].append({
+                "ARTIKELNR": art,
+                "ORDER_QTY": qty,
+                "ORDER_PALLETS": pal,
+                "SOURCE_FILE": "MANUAL"
+            })
+
+    # Display current list and render tool
+    if st.session_state["manual_removal_items"]:
+        st.markdown("---")
+        manual_df = pd.DataFrame(st.session_state["manual_removal_items"])
+        
+        if st.button(STR.get("removal_clear_btn", "Wyczyść listę"), key="man_clear"):
+            st.session_state["manual_removal_items"] = []
+            st.rerun()
+            
+        render_removal_tool(stock_df, manual_df, "MANUAL", STR)
