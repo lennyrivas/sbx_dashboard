@@ -12,22 +12,6 @@ from utils import (
     save_packages_strategies,
 )
 
-def init_settings():
-    # Initialize default settings in session state if they don't exist.
-    # Инициализация настроек по умолчанию в состоянии сессии, если они не существуют.
-    defaults = {
-        "cartons": ["83090", "676", "568", "ZC", "826", "3807486", 
-                   "PRZEKLADKI CIETE", "RAMKA IPUV", "TCM-ECE", "TKAS"],
-        "pallets_frames": [],
-        "other_packaging": []
-    }
-    
-    for key, default_list in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = default_list.copy()
-    
-    return defaults
-
 def render_settings_tab(STR):
     # Renders the 'Settings' tab with extended configuration for exceptions and packaging.
     # Рендерит вкладку 'Настройки' с расширенной конфигурацией для исключений и упаковки.
