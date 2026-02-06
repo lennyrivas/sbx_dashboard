@@ -430,12 +430,12 @@ def parse_order_file_to_df(fobj):
         if per_candidate[1]["per_hits_count"] > 0:
             per_col_idx = per_candidate[0]
 
-    # 2. Identify PALLETS column (small integers <= 32).
-    # 2. Идентифицируем колонку PALLETS (малые целые числа <= 32).
+    # 2. Identify PALLETS column (small integers <= 500).
+    # 2. Идентифицируем колонку PALLETS (малые целые числа <= 500).
     for idx, stats in col_stats.items():
         if idx == per_col_idx:
             continue
-        if stats["max"] <= 32:
+        if stats["max"] <= 500:
             pallets_col_idx = idx
             break
 
