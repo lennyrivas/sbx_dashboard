@@ -335,6 +335,16 @@ def render_stock_history(df, selected_mandant_stock, selected_artikel_stock, his
                 hovertemplate=f"{STR['chart_hover_date']}: %{{x}}<br>{STR['chart_hover_cartons']}: %{{y:,.0f}}<extra></extra>"
             ))
 
+        if show_other and "OTHER" in plot_df.columns:
+            fig.add_trace(go.Scatter(
+                x=plot_df["DATE"].tolist(),
+                y=plot_df["OTHER"].tolist(),
+                name=STR["metric_other_pkg"],
+                mode='lines+markers',
+                line=dict(color='#2ECC71', width=2),
+                hovertemplate=f"{STR['chart_hover_date']}: %{{x}}<br>{STR['metric_other_pkg']}: %{{y:,.0f}}<extra></extra>"
+            ))
+
         # 4. Axis configuration (important!).
         # 4. Настройка осей (важно!).
         fig.update_layout(
