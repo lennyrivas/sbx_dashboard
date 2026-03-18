@@ -146,10 +146,18 @@ def run_ihka_downloader(status_container, STR):
         
         # Enter credentials.
         # Вводим учетные данные.
+        # Retrieve credentials from secrets
+        ihka_user = st.secrets.get("IHKA_USER")
+        ihka_pass = st.secrets.get("IHKA_PASSWORD")
+
+        if not ihka_user or not ihka_pass:
+            status_container.error(STR["err_ihka_creds"])
+            return None
+
         user_input.clear()
-        user_input.send_keys("Opakowania")
+        user_input.send_keys(ihka_user)
         pass_input.clear()
-        pass_input.send_keys("Start123!")
+        pass_input.send_keys(ihka_pass)
         
         # Submit the form by pressing Enter.
         # Отправляем форму нажатием Enter.
@@ -495,9 +503,9 @@ def run():
         log("Logowanie do systemu...")
         driver.get("http://ihka.schaeflein.de/WebAccess/Auth/Login")
         
-        wait.until(EC.presence_of_element_located((By.NAME, "user"))).send_keys("Opakowania")
+        wait.until(EC.presence_of_element_located((By.NAME, "user"))).send_keys("__USER__")
         pass_input = wait.until(EC.presence_of_element_located((By.NAME, "password")))
-        pass_input.send_keys("Start123!")
+        pass_input.send_keys("__PASS__")
         pass_input.send_keys(Keys.RETURN)
 
         log("Nawigacja do raportu...")
@@ -729,6 +737,13 @@ echo.
 echo Gotowe.
 pause
 '''
+
+    # Inject secrets into the standalone script
+    # Внедряем секреты в автономный скрипт
+    ihka_user = st.secrets.get("IHKA_USER", "")
+    ihka_pass = st.secrets.get("IHKA_PASSWORD", "")
+    
+    py_code = py_code.replace("__USER__", ihka_user).replace("__PASS__", ihka_pass)
 
     # 3. prepare_libs.bat content (Helper to download libs for offline tool)
     # 3. Содержимое prepare_libs.bat (Помощник для загрузки библиотек для офлайн-инструмента)

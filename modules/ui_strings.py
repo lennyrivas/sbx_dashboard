@@ -270,6 +270,7 @@ TRANSLATIONS = {
         "settings_btn_save_strategies": "💾 Zapisz strategie",
         "settings_msg_strategies_saved": "✅ Strategie zapisane pomyślnie",
         "settings_strat_explanation": "ℹ️ **Jak to działa?**\n\nJeśli artykuł znajduje się na tej liście, algorytm w zakładce **Usuwanie palet** zignoruje ilość sztuk na palecie i spróbuje dobrać dokładnie tyle palet, ile wynika z zamówienia.\n\n**Przykład:**\nZamówienie: 1 szt. (co oznacza 1 paletę).\nStan: Paleta ma 4 sztuki.\n\nBez tej strategii: System szukałby palety z 1 sztuką.\nZ tą strategią: System weźmie paletę z 4 sztukami, bo liczy się 1 paleta.",
+        "err_ihka_creds": "Nie można zalogować się do ihka.schaeflein.de. Sprawdź login (IHKA_USER) i hasło (IHKA_PASSWORD) w pliku secrets.toml.",
     },
     "EN": {
         "title": "Warehouse — Pallet Report",
@@ -534,6 +535,7 @@ TRANSLATIONS = {
         "settings_btn_save_strategies": "💾 Save Strategies",
         "settings_msg_strategies_saved": "✅ Strategies saved successfully",
         "settings_strat_explanation": "ℹ️ **How it works?**\n\nIf an article is on this list, the algorithm in the **Pallet Removal** tab will ignore the quantity of pieces on the pallet and try to select exactly as many pallets as ordered.\n\n**Example:**\nOrder: 1 pc (which means 1 pallet).\nStock: Pallet has 4 pcs.\n\nWithout this strategy: System would look for a pallet with 1 pc.\nWith this strategy: System will take the pallet with 4 pcs because 1 pallet counts.",
+        "err_ihka_creds": "Cannot login to ihka.schaeflein.de. Check login (IHKA_USER) and password (IHKA_PASSWORD) in secrets.toml.",
     }
 }
 
