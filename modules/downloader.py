@@ -75,7 +75,7 @@ def run_ihka_downloader(status_container, STR):
         # Настраиваем опции Firefox.
         options = Options()
         # options.add_argument("--headless")  # Uncomment to run without GUI (invisible browser).
-        # options.add_argument("--headless")  # Раскомментируйте, чтобы запустить без GUI (невидимый браузер).
+        options.add_argument("--headless")  # Раскомментируйте, чтобы запустить без GUI (невидимый браузер).
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
         
