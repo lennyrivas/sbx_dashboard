@@ -88,7 +88,8 @@ except AttributeError:
 st.sidebar.markdown(f"### {STR['import_data']}")
 
 # User inputs for auto-downloader
-dl_mandant = st.sidebar.text_input(STR["mandant"], value="352", key="dl_mandant")
+mandant_tips = "351 - PL11 PDPs, Samples  \n 352 - PL11 Packagings   \n  354 - PL31 Packagings"
+dl_mandant = st.sidebar.text_input(STR["mandant"], value="352", key="dl_mandant", help=mandant_tips)
 dl_date_from = st.sidebar.date_input(STR["from"], value=datetime(2016, 12, 20).date(), key="dl_date_from")
 dl_date_to = st.sidebar.date_input(STR["to"], value=datetime.now().date(), key="dl_date_to")
 
