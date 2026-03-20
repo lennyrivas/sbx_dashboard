@@ -304,6 +304,7 @@ with tab_analysis:
 
     # Render the main orders table and comparison logic.
     # Рендеринг основной таблицы заказов и логики сравнения.
+    
     render_orders_tab(
         artikel_options,
         filtered_pallets_df,
@@ -313,6 +314,7 @@ with tab_analysis:
         date_start=date_start,
         date_end=date_end,
         selected_mandant=selected_mandant,
+        show_comparison=(mode == STR["mode_deleted"]),
         STR=STR
     )
 

@@ -891,7 +891,7 @@ def render_manual_orders_editor(artikel_options, STR):
 # ---------- Main function for 'Orders' tab ----------
 # ---------- Главная функция для вкладки 'Заказы' ----------
 
-def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artikel=None, filtered_pallets_no_art_df=None, full_df=None, date_start=None, date_end=None, selected_mandant=None, STR=None):
+def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artikel=None, filtered_pallets_no_art_df=None, full_df=None, date_start=None, date_end=None, selected_mandant=None, show_comparison=True, STR=None):
     # Main function to render the Orders tab.
     # Главная функция для рендеринга вкладки Заказы.
     # Displays pallet list, order uploads, and comparison.
@@ -1137,168 +1137,169 @@ def render_orders_tab(artikel_options, filtered_pallets_df=None, selected_artike
 
     # --- 3. Comparison Section ---
     # --- 3. Секция сравнения ---
-    df_for_comparison = filtered_pallets_no_art_df if filtered_pallets_no_art_df is not None else filtered_pallets_df
+    if show_comparison:
+        df_for_comparison = filtered_pallets_no_art_df if filtered_pallets_no_art_df is not None else filtered_pallets_df
 
-    if df_for_comparison is not None and not df_for_comparison.empty:
-        st.markdown("---")
-        st.subheader(f"⚖️ {STR['compare']}")
+        if df_for_comparison is not None and not df_for_comparison.empty:
+            st.markdown("---")
+            st.subheader(f"⚖️ {STR['compare']}")
 
-        deleted_pallets = df_for_comparison[df_for_comparison["IS_DELETED"]].copy()
+            deleted_pallets = df_for_comparison[df_for_comparison["IS_DELETED"]].copy()
 
-        if not deleted_pallets.empty:
-            # Aggregate deleted pallets.
-            # Агрегация удаленных паллет.
-            # observed=True ensures we only count existing categories.
-            # observed=True гарантирует, что мы считаем только существующие категории.
-            deleted_agg = deleted_pallets.groupby("ARTIKELNR", as_index=False, observed=True).agg(
-                Deleted_Pallets=("LHMNR", "nunique"),
-                Deleted_Qty=("QUANTITY", "sum"),
-            )
+            if not deleted_pallets.empty:
+                # Aggregate deleted pallets.
+                # Агрегация удаленных паллет.
+                # observed=True ensures we only count existing categories.
+                # observed=True гарантирует, что мы считаем только существующие категории.
+                deleted_agg = deleted_pallets.groupby("ARTIKELNR", as_index=False, observed=True).agg(
+                    Deleted_Pallets=("LHMNR", "nunique"),
+                    Deleted_Qty=("QUANTITY", "sum"),
+                )
 
-            # Merge orders and deletions.
-            # Объединение заказов и удалений.
-            comparison_df = orders_agg[["ARTIKELNR", "Ordered_Pallets_Total", "Ordered_Qty_Total"]].merge(
-                deleted_agg, on="ARTIKELNR", how="outer"
-            ).fillna(0)
+                # Merge orders and deletions.
+                # Объединение заказов и удалений.
+                comparison_df = orders_agg[["ARTIKELNR", "Ordered_Pallets_Total", "Ordered_Qty_Total"]].merge(
+                    deleted_agg, on="ARTIKELNR", how="outer"
+                ).fillna(0)
 
-            comparison_df["Różnica_Palety"] = (
-                comparison_df["Ordered_Pallets_Total"] - comparison_df["Deleted_Pallets"]
-            )
-            comparison_df["Różnica_Sztuki"] = (
-                comparison_df["Ordered_Qty_Total"] - comparison_df["Deleted_Qty"]
-            )
+                comparison_df["Różnica_Palety"] = (
+                    comparison_df["Ordered_Pallets_Total"] - comparison_df["Deleted_Pallets"]
+                )
+                comparison_df["Różnica_Sztuki"] = (
+                    comparison_df["Ordered_Qty_Total"] - comparison_df["Deleted_Qty"]
+                )
 
-            # Filter rows based on differences and exclusions.
-            # Фильтрация строк на основе различий и исключений.
-            excluded_exact, excluded_prefixes = load_excluded_articles()
-            
-            def should_show_row(row):
-                art = row["ARTIKELNR"].strip().upper()
-                if is_excluded_article(art, excluded_exact, excluded_prefixes):
-                    # For excluded articles, show only if BOTH differences are non-zero.
-                    # Для исключенных артикулов показывать только если ОБА различия не равны нулю.
-                    return (row["Różnica_Palety"] != 0) and (row["Różnica_Sztuki"] != 0)
-                else:
-                    # For regular articles, show if ANY difference exists.
-                    # Для обычных артикулов показывать, если есть ХОТЯ БЫ ОДНО различие.
-                    return (row["Różnica_Palety"] != 0) or (row["Różnica_Sztuki"] != 0)
-            
-            comparison_df = comparison_df[comparison_df.apply(should_show_row, axis=1)]
-
-
-            # Generate explanation text.
-            # Генерация текста пояснения.
-            def explain_diff(row):
-                diff_pal = row["Różnica_Palety"]
-                diff_szt = row["Różnica_Sztuki"]
-
-                if diff_pal == 0 and diff_szt == 0:
-                    return STR["diff_none"]
-                msgs = []
-
-                if diff_pal > 0:
-                    msgs.append(STR["diff_pallets_less"].format(val=int(abs(diff_pal))))
-                elif diff_pal < 0:
-                    msgs.append(STR["diff_pallets_more"].format(val=int(abs(diff_pal))))
-                else:
-                    msgs.append(STR["diff_pallets_none"])
-
-                if diff_szt > 0:
-                    msgs.append(STR["diff_qty_missing"].format(val=int(abs(diff_szt))))
-                elif diff_szt < 0:
-                    msgs.append(STR["diff_qty_excess"].format(val=int(abs(diff_szt))))
-                else:
-                    msgs.append(STR["diff_qty_none"])
-
-                return ", ".join(msgs)
-
-            comparison_df["Wyjaśnienie różnicy"] = comparison_df.apply(explain_diff, axis=1)
-
-            comparison_df = comparison_df.sort_values("Różnica_Palety", ascending=False).reset_index(drop=True)
-
-            # --- Daily Breakdown Analysis ---
-            # --- Анализ ежедневной разбивки ---
-            is_date_range = date_start and date_end and (date_end.date() - date_start.date()).days > 0
-
-            if is_date_range and orders_all is not None and "ORDER_DATE" in orders_all.columns and not orders_all.empty:
-                orders_valid = orders_all.dropna(subset=["ORDER_DATE"]).copy()
+                # Filter rows based on differences and exclusions.
+                # Фильтрация строк на основе различий и исключений.
+                excluded_exact, excluded_prefixes = load_excluded_articles()
                 
-                # Warn about files without dates.
-                # Предупреждение о файлах без дат.
-                missing_date_mask = orders_all["ORDER_DATE"].isna()
-                if missing_date_mask.any():
-                    missing_files = orders_all.loc[missing_date_mask, "SOURCE_FILE"].unique()
-                    if len(missing_files) > 0:
-                        st.warning(
-                            STR["diff_days_warning"].format(count=len(missing_files), example=missing_files[0])
-                        )
-
-                if not orders_valid.empty:
-                    orders_daily = orders_valid.groupby(["ARTIKELNR", "ORDER_DATE"], as_index=False)["ORDER_PALLETS"].sum()
-                    orders_daily.rename(columns={"ORDER_DATE": "DATE", "ORDER_PALLETS": "ORD"}, inplace=True)
-                else:
-                    orders_daily = pd.DataFrame(columns=["ARTIKELNR", "DATE", "ORD"])
+                def should_show_row(row):
+                    art = row["ARTIKELNR"].strip().upper()
+                    if is_excluded_article(art, excluded_exact, excluded_prefixes):
+                        # For excluded articles, show only if BOTH differences are non-zero.
+                        # Для исключенных артикулов показывать только если ОБА различия не равны нулю.
+                        return (row["Różnica_Palety"] != 0) and (row["Różnica_Sztuki"] != 0)
+                    else:
+                        # For regular articles, show if ANY difference exists.
+                        # Для обычных артикулов показывать, если есть ХОТЯ БЫ ОДНО различие.
+                        return (row["Różnica_Palety"] != 0) or (row["Różnica_Sztuki"] != 0)
                 
-                if not deleted_pallets.empty:
-                    del_daily = deleted_pallets.copy()
-                    del_daily["DATE"] = del_daily["OUT_DATE"].dt.date
-                    # Group by article and date. observed=True handles categorical ARTIKELNR correctly.
-                    # Группируем по артикулу и дате. observed=True корректно обрабатывает категориальный ARTIKELNR.
-                    del_daily_agg = del_daily.groupby(["ARTIKELNR", "DATE"], as_index=False, observed=True)["LHMNR"].nunique()
-                    del_daily_agg.rename(columns={"LHMNR": "DEL"}, inplace=True)
-                else:
-                    del_daily_agg = pd.DataFrame(columns=["ARTIKELNR", "DATE", "DEL"])
+                comparison_df = comparison_df[comparison_df.apply(should_show_row, axis=1)]
 
-                # Merge daily data and calculate differences.
-                # Объединение ежедневных данных и расчет различий.
-                if not orders_daily.empty or not del_daily_agg.empty:
-                    daily_merged = pd.merge(orders_daily, del_daily_agg, on=["ARTIKELNR", "DATE"], how="outer").fillna(0)
-                    daily_merged["DIFF"] = daily_merged["ORD"] - daily_merged["DEL"]
-                    
-                    daily_diffs = daily_merged[daily_merged["DIFF"] != 0].copy()
-                    
-                    if not daily_diffs.empty:
-                        daily_diffs = daily_diffs.sort_values("DATE")
-                        
-                        def fmt_diff(row):
-                            d_str = row["DATE"].strftime("%d.%m")
-                            val = int(row["DIFF"])
-                            sign = "+" if val > 0 else ""
-                            return f"{d_str}: {sign}{val}"
 
-                        daily_diffs["TXT"] = daily_diffs.apply(fmt_diff, axis=1)
+                # Generate explanation text.
+                # Генерация текста пояснения.
+                def explain_diff(row):
+                    diff_pal = row["Różnica_Palety"]
+                    diff_szt = row["Różnica_Sztuki"]
+
+                    if diff_pal == 0 and diff_szt == 0:
+                        return STR["diff_none"]
+                    msgs = []
+
+                    if diff_pal > 0:
+                        msgs.append(STR["diff_pallets_less"].format(val=int(abs(diff_pal))))
+                    elif diff_pal < 0:
+                        msgs.append(STR["diff_pallets_more"].format(val=int(abs(diff_pal))))
+                    else:
+                        msgs.append(STR["diff_pallets_none"])
+
+                    if diff_szt > 0:
+                        msgs.append(STR["diff_qty_missing"].format(val=int(abs(diff_szt))))
+                    elif diff_szt < 0:
+                        msgs.append(STR["diff_qty_excess"].format(val=int(abs(diff_szt))))
+                    else:
+                        msgs.append(STR["diff_qty_none"])
+
+                    return ", ".join(msgs)
+
+                comparison_df["Wyjaśnienie różnicy"] = comparison_df.apply(explain_diff, axis=1)
+
+                comparison_df = comparison_df.sort_values("Różnica_Palety", ascending=False).reset_index(drop=True)
+
+                # --- Daily Breakdown Analysis ---
+                # --- Анализ ежедневной разбивки ---
+                is_date_range = date_start and date_end and (date_end.date() - date_start.date()).days > 0
+
+                if is_date_range and orders_all is not None and "ORDER_DATE" in orders_all.columns and not orders_all.empty:
+                    orders_valid = orders_all.dropna(subset=["ORDER_DATE"]).copy()
+                    
+                    # Warn about files without dates.
+                    # Предупреждение о файлах без дат.
+                    missing_date_mask = orders_all["ORDER_DATE"].isna()
+                    if missing_date_mask.any():
+                        missing_files = orders_all.loc[missing_date_mask, "SOURCE_FILE"].unique()
+                        if len(missing_files) > 0:
+                            st.warning(
+                                STR["diff_days_warning"].format(count=len(missing_files), example=missing_files[0])
+                            )
+
+                    if not orders_valid.empty:
+                        orders_daily = orders_valid.groupby(["ARTIKELNR", "ORDER_DATE"], as_index=False)["ORDER_PALLETS"].sum()
+                        orders_daily.rename(columns={"ORDER_DATE": "DATE", "ORDER_PALLETS": "ORD"}, inplace=True)
+                    else:
+                        orders_daily = pd.DataFrame(columns=["ARTIKELNR", "DATE", "ORD"])
+                    
+                    if not deleted_pallets.empty:
+                        del_daily = deleted_pallets.copy()
+                        del_daily["DATE"] = del_daily["OUT_DATE"].dt.date
+                        # Group by article and date. observed=True handles categorical ARTIKELNR correctly.
+                        # Группируем по артикулу и дате. observed=True корректно обрабатывает категориальный ARTIKELNR.
+                        del_daily_agg = del_daily.groupby(["ARTIKELNR", "DATE"], as_index=False, observed=True)["LHMNR"].nunique()
+                        del_daily_agg.rename(columns={"LHMNR": "DEL"}, inplace=True)
+                    else:
+                        del_daily_agg = pd.DataFrame(columns=["ARTIKELNR", "DATE", "DEL"])
+
+                    # Merge daily data and calculate differences.
+                    # Объединение ежедневных данных и расчет различий.
+                    if not orders_daily.empty or not del_daily_agg.empty:
+                        daily_merged = pd.merge(orders_daily, del_daily_agg, on=["ARTIKELNR", "DATE"], how="outer").fillna(0)
+                        daily_merged["DIFF"] = daily_merged["ORD"] - daily_merged["DEL"]
                         
-                        daily_map = daily_diffs.groupby("ARTIKELNR")["TXT"].apply(lambda x: "\n".join(x)).to_dict()
+                        daily_diffs = daily_merged[daily_merged["DIFF"] != 0].copy()
                         
-                        comparison_df["Dni z różnicą"] = comparison_df["ARTIKELNR"].map(daily_map).fillna("-")
+                        if not daily_diffs.empty:
+                            daily_diffs = daily_diffs.sort_values("DATE")
+                            
+                            def fmt_diff(row):
+                                d_str = row["DATE"].strftime("%d.%m")
+                                val = int(row["DIFF"])
+                                sign = "+" if val > 0 else ""
+                                return f"{d_str}: {sign}{val}"
+
+                            daily_diffs["TXT"] = daily_diffs.apply(fmt_diff, axis=1)
+                            
+                            daily_map = daily_diffs.groupby("ARTIKELNR")["TXT"].apply(lambda x: "\n".join(x)).to_dict()
+                            
+                            comparison_df["Dni z różnicą"] = comparison_df["ARTIKELNR"].map(daily_map).fillna("-")
+                        else:
+                            comparison_df["Dni z różnicą"] = "-"
                     else:
                         comparison_df["Dni z różnicą"] = "-"
-                else:
+                elif is_date_range:
                     comparison_df["Dni z różnicą"] = "-"
-            elif is_date_range:
-                comparison_df["Dni z różnicą"] = "-"
 
-            # Rename columns for display.
-            # Переименование колонок для отображения.
-            display_comparison_df = comparison_df.copy()
-            display_comparison_df.rename(columns={
-                "Różnica_Palety": STR["col_diff_pallets"],
-                "Różnica_Sztuki": STR["col_diff_qty"],
-                "Wyjaśnienie różnicy": STR["col_diff_explanation"],
-                "Dni z różnicą": STR["col_diff_days"]
-            }, inplace=True)
+                # Rename columns for display.
+                # Переименование колонок для отображения.
+                display_comparison_df = comparison_df.copy()
+                display_comparison_df.rename(columns={
+                    "Różnica_Palety": STR["col_diff_pallets"],
+                    "Różnica_Sztuki": STR["col_diff_qty"],
+                    "Wyjaśnienie różnicy": STR["col_diff_explanation"],
+                    "Dni z różnicą": STR["col_diff_days"]
+                }, inplace=True)
 
-            st.dataframe(
-                display_comparison_df,
-                width="stretch",
-                hide_index=True,
-            )
+                st.dataframe(
+                    display_comparison_df,
+                    width="stretch",
+                    hide_index=True,
+                )
 
-            # Display final metrics.
-            # Отображение итоговых метрик.
-            col1, col2, col3 = st.columns(3)
-            col1.metric(STR["metric_articles_ordered"], f"{len(orders_agg[orders_agg['Ordered_Pallets_Total'] > 0])}")
-            col2.metric(STR["metric_articles_removed"], f"{len(deleted_agg)}")
-            col3.metric(STR["metric_articles_diff"], f"{len(comparison_df)}")
-        else:
-            st.info("Brak usuniętych palet w wybranym zakresie.")
+                # Display final metrics.
+                # Отображение итоговых метрик.
+                col1, col2, col3 = st.columns(3)
+                col1.metric(STR["metric_articles_ordered"], f"{len(orders_agg[orders_agg['Ordered_Pallets_Total'] > 0])}")
+                col2.metric(STR["metric_articles_removed"], f"{len(deleted_agg)}")
+                col3.metric(STR["metric_articles_diff"], f"{len(comparison_df)}")
+            else:
+                st.info("Brak usuniętych palet w wybranym zakresie.")
