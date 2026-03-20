@@ -23,7 +23,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.firefox import GeckoDriverManager
 
-def run_ihka_downloader(status_container, STR):
+def run_ihka_downloader(status_container, STR, date_from_str="20.12.2016", date_until_str=None, mandant_str="352"):
     # Runs the automatic download process using Selenium.
     # Запускает процесс автоматической загрузки с использованием Selenium.
     #
@@ -32,6 +32,9 @@ def run_ihka_downloader(status_container, STR):
     #     status_container: Контейнер Streamlit (st.empty или st.status) для отображения сообщений о прогрессе.
     #     STR (dict): Dictionary of localized strings for UI messages.
     #     STR (dict): Словарь локализованных строк для сообщений интерфейса.
+    #     date_from_str (str): Start date string (dd.mm.yyyy).
+    #     date_until_str (str): End date string (dd.mm.yyyy).
+    #     mandant_str (str): Mandant ID.
     #
     # Returns:
     #     str: Path to the downloaded file if successful, or None if an error occurs.
@@ -273,20 +276,21 @@ def run_ihka_downloader(status_container, STR):
         # DATEFROM: Устанавливаем начальную дату.
         input_date_from = driver.find_element(By.CSS_SELECTOR, "input[data-parameterkey='DATEFROM']")
         input_date_from.clear()
-        input_date_from.send_keys("20.12.2016")
+        input_date_from.send_keys(date_from_str)
 
         # DATEUNTIL: Set end date to today.
         # DATEUNTIL: Устанавливаем конечную дату на сегодня.
         input_date_until = driver.find_element(By.CSS_SELECTOR, "input[data-parameterkey='DATEUNTIL']")
         input_date_until.clear()
-        today_str = datetime.now().strftime("%d.%m.%Y")
-        input_date_until.send_keys(today_str)
+        if not date_until_str:
+            date_until_str = datetime.now().strftime("%d.%m.%Y")
+        input_date_until.send_keys(date_until_str)
 
         # MANDANT: Set client ID.
         # MANDANT: Устанавливаем ID клиента.
         input_mandant = driver.find_element(By.CSS_SELECTOR, "input[data-parameterkey='MANDANT']")
         input_mandant.clear()
-        input_mandant.send_keys("352")
+        input_mandant.send_keys(mandant_str)
 
         # --- 5. Table Generation ---
         # --- 5. Генерация таблицы ---

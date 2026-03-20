@@ -87,6 +87,11 @@ except AttributeError:
 # 1. Автозагрузка из IHKA.
 st.sidebar.markdown(f"### {STR['import_data']}")
 
+# User inputs for auto-downloader
+dl_mandant = st.sidebar.text_input(STR["mandant"], value="352", key="dl_mandant")
+dl_date_from = st.sidebar.date_input(STR["from"], value=datetime(2016, 12, 20).date(), key="dl_date_from")
+dl_date_to = st.sidebar.date_input(STR["to"], value=datetime.now().date(), key="dl_date_to")
+
 if st.sidebar.button(STR["btn_auto_download"], type="primary"):
     # Create a status container to show progress.
     # Создаем контейнер статуса для отображения прогресса.
@@ -94,7 +99,13 @@ if st.sidebar.button(STR["btn_auto_download"], type="primary"):
     
     # Run the downloader process.
     # Запускаем процесс загрузки.
-    file_path = run_ihka_downloader(status_box, STR)
+    file_path = run_ihka_downloader(
+        status_box, 
+        STR, 
+        date_from_str=dl_date_from.strftime("%d.%m.%Y"),
+        date_until_str=dl_date_to.strftime("%d.%m.%Y"),
+        mandant_str=dl_mandant
+    )
     
     if file_path:
         # If download successful, try to load the file.
