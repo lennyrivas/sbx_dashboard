@@ -36,10 +36,16 @@ def render_analysis_filters(df: pd.DataFrame, STR):
     # Mandant selection (narrow column).
     # Выбор манданта (узкая колонка).
     with col_mandant:
+        available_mandants = sorted(df["MANDANT"].astype(str).unique()) if not df.empty else ["351", "352"]
+        
+        default_idx = 0
+        if "352" in available_mandants:
+            default_idx = available_mandants.index("352")
+
         selected_mandant = st.selectbox(
             STR["mandant"],
-            options=["351", "352"],
-            index=1,
+            options=available_mandants,
+            index=default_idx,
             key="analysis_mandant",
         )
 
